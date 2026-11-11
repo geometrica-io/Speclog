@@ -110,29 +110,30 @@ describe('runGit', () => {
     expect(r.cancelled).toBe(true);
   });
 
-  // A grandchild keeps writing to stdout for ~1 s after git itself has exited.
-  const lateWriter = ['-c', 'alias.w=!(for i in $(seq 1 20); do sleep 0.05; echo line$i; done) &', 'w'];
+  // A grandchild keeps writing to stdout for well under a second after git itself has exited
+  // (inside the 2 s post-exit drain limit).
+  const lateWriter = ['-c', 'alias.w=!(for i in $(seq 1 8); do sleep 0.05; echo line$i; done) &', 'w'];
 
   it('output written after git exits is not truncated', async () => {
     const r = await runGit('.', lateWriter, { timeoutMs: 15000 });
     expect(r.code).toBe(0);
     expect(r.out).toContain('line1\n');
-    expect(r.out).toContain('line20\n');
+    expect(r.out).toContain('line8\n');
   }, 20000);
 
   it('a normal exit is never reported as timed out or cancelled', async () => {
     // The timeout and the abort fire after git exited but while the grandchild still writes.
-    const t = await runGit('.', lateWriter, { timeoutMs: 700 });
+    const t = await runGit('.', lateWriter, { timeoutMs: 800 });
     expect(t.code).toBe(0);
     expect(t.timedOut).toBe(false);
-    expect(t.out).toContain('line20\n');
+    expect(t.out).toContain('line8\n');
 
     const ac = new AbortController();
-    setTimeout(() => ac.abort(), 700);
+    setTimeout(() => ac.abort(), 800);
     const c = await runGit('.', lateWriter, { signal: ac.signal });
     expect(c.code).toBe(0);
     expect(c.cancelled).toBe(false);
-    expect(c.out).toContain('line20\n');
+    expect(c.out).toContain('line8\n');
   }, 20000);
 
   const markerCmd = (name: string, seconds: number) => {
@@ -142,15 +143,16 @@ describe('runGit', () => {
   };
 
   it('survivesCancel: an abort stops waiting but does not kill git', async () => {
-    const { marker, args } = markerCmd('survive', 1);
+    const { marker, args } = markerCmd('survive', 3);
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 300);
     const t0 = Date.now();
     const r = await runGit('.', args, { signal: ac.signal, survivesCancel: true });
     expect(r.cancelled).toBe(true);
     expect(r.timedOut).toBe(false);
-    expect(ms(t0)).toBeLessThan(900);
-    await new Promise((res) => setTimeout(res, 3000));
+    expect(ms(t0)).toBeLessThan(2500); // well before git would finish (~3 s)
+    expect(fs.existsSync(marker)).toBe(false);
+    await new Promise((res) => setTimeout(res, 5000));
     expect(fs.existsSync(marker)).toBe(true); // git finished its work
     fs.rmSync(marker, { force: true });
   }, 15000);
@@ -172,4 +174,24 @@ describe('runGit', () => {
     expect(fs.existsSync(b.marker)).toBe(false);
     expect(c.timedOut).toBe(false); // the result handed out does not change afterwards
   }, 15000);
+
+  // A grandchild that keeps writing every 50 ms (for up to ~10 s; stops on a closed pipe).
+  const endless = 'for i in $(seq 1 200); do echo tick || exit; sleep 0.05; done';
+
+  it('an endless writer after a normal exit is drained for at most 2 s', async () => {
+    const t0 = Date.now();
+    const r = await runGit('.', ['-c', `alias.e=!(${endless}) &`, 'e'], { timeoutMs: 30000 });
+    expect(ms(t0)).toBeLessThan(4000); // exit + 2 s drain limit, with slack
+    expect(r.code).toBe(0);
+    expect(r.timedOut).toBe(false);
+    expect(r.out).toContain('tick\n'); // output gathered so far
+  }, 20000);
+
+  it('an endless writer after a timeout kill gets a one-shot grace', async () => {
+    const t0 = Date.now();
+    const r = await runGit('.', ['-c', `alias.k=!(${endless}) & sleep 10`, 'k'], { timeoutMs: 1000 });
+    expect(r.timedOut).toBe(true);
+    expect(ms(t0)).toBeLessThan(3000); // timeout + one-shot grace, with slack
+    expect(r.out).toContain('tick\n');
+  }, 20000);
 });

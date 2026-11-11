@@ -109,7 +109,10 @@ async function children(dir: string): Promise<string[]> {
   return all.filter((_, i) => dirs[i]);
 }
 
-/** Runs fn over items with at most `limit` calls in flight; results keep the input order. */
+/**
+ * Runs fn over items with at most `limit` calls in flight; results keep the input order. If fn
+ * rejects, the returned promise rejects while the other workers keep running their items.
+ */
 export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;

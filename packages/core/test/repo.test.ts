@@ -441,14 +441,14 @@ describe('git repo queries', () => {
 
     // Outlives: an abort only stops waiting; git completes the fetch and leaves no lock file.
     expect((await runGit(t.bare, ['update-ref', 'refs/heads/late', await t.work.head()])).code).toBe(0);
-    await t.work.git(['config', 'remote.origin.uploadpack', 'sleep 2; git-upload-pack']);
+    await t.work.git(['config', 'remote.origin.uploadpack', 'sleep 4; git-upload-pack']);
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 300);
     const t0 = Date.now();
     const cancelled = await fetch(t.work.dir, ac.signal);
     expect(cancelled.value.cancelled).toBe(true);
     expect(cancelled.error).toBe('git fetch: cancelled');
-    expect(Date.now() - t0).toBeLessThan(1500);
+    expect(Date.now() - t0).toBeLessThan(3000); // well before upload-pack starts (~4 s)
     const lateRef = async () => (await t.work.git(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/late'])).code === 0;
     expect(await lateRef()).toBe(false); // not fetched yet when the wait was abandoned
     let landed = false;

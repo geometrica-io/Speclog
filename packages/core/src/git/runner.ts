@@ -9,14 +9,21 @@ export interface GitOptions {
   /**
    * The child is not killed by an abort or by this process exiting (fetch: git must not be
    * stopped mid-write and leave lock files). An abort only stops waiting (cancelled: true); the
-   * output is still drained while this process lives. The timeout still kills.
+   * output is still drained while this process lives. The timeout still kills, but only while
+   * this process lives; once it has exited, the orphaned child's stdout/stderr are broken pipes
+   * (fetch runs with --quiet, so only an error message could hit that).
    */
   survivesCancel?: boolean;
 }
 
 const DEFAULT_TIMEOUT_MS = 120000;
-/** After the git process exits, wait until the pipes held by grandchildren are idle this long. */
+/**
+ * After git exits normally, wait until the pipes held by grandchildren have been idle this long
+ * (restarted by each chunk), but never longer than PIPE_DRAIN_MAX_MS after the exit. After a
+ * kill (timeout / abort) the wait is a one-shot PIPE_GRACE_MS.
+ */
 const PIPE_GRACE_MS = 200;
+const PIPE_DRAIN_MAX_MS = 2000;
 
 function killTree(pid: number | undefined): void {
   if (pid === undefined) return;
@@ -34,7 +41,8 @@ function killTree(pid: number | undefined): void {
 /**
  * Runs `git <args>` with cwd = repoDir (never rejects). GIT_TERMINAL_PROMPT=0, no window.
  * timeoutMs < 0: no limit. Timeout/abort kill git and its whole process tree (an abort with
- * survivesCancel only stops waiting).
+ * survivesCancel only stops waiting). The timeout is a timer of this process: it does not
+ * survive this process exiting.
  */
 export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): Promise<GitResult> {
   const result: GitResult = { code: -1, out: '', err: '', launched: false, timedOut: false, cancelled: false };
@@ -71,6 +79,10 @@ export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): 
     let spawnError = '';
     let timer: NodeJS.Timeout | undefined;
     let graceTimer: NodeJS.Timeout | undefined;
+    let drainCap: NodeJS.Timeout | undefined;
+    /** Normal exit, pipes still open: each chunk restarts the idle grace (bounded by drainCap). */
+    let idleDrain = false;
+    let killed = false;
 
     const stopTimers = (): void => {
       if (timer) clearTimeout(timer);
@@ -90,6 +102,7 @@ export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): 
         stopTimers();
       }
       if (graceTimer) clearTimeout(graceTimer);
+      if (drainCap) clearTimeout(drainCap);
       result.out = Buffer.concat(outChunks).toString('utf8');
       result.err = spawnError || Buffer.concat(errChunks).toString('utf8');
       if (detachedWait) {
@@ -111,8 +124,11 @@ export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): 
     };
 
     const stop = (): void => {
+      if (killed) return;
+      killed = true;
+      idleDrain = false;
       killTree(child.pid);
-      // Pipes may stay open if a grandchild escaped; do not wait for them.
+      // Pipes may stay open if a grandchild escaped: one-shot grace, never restarted.
       armGrace();
     };
 
@@ -133,7 +149,7 @@ export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): 
     const onData = (chunks: Buffer[]) => (d: Buffer): void => {
       if (finished) return;
       chunks.push(d);
-      if (graceTimer) armGrace(); // pipes still active: keep waiting for them
+      if (idleDrain) armGrace(); // pipes still active after a normal exit: keep waiting (capped)
     };
     child.stdout?.on('data', onData(outChunks));
     child.stderr?.on('data', onData(errChunks));
@@ -147,7 +163,11 @@ export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): 
       // A normal exit can no longer be reported as timed out or cancelled.
       stopTimers();
       // 'close' fires once the pipes end; a grandchild holding them must not block us.
-      if (!finished) armGrace();
+      if (!finished && !killed) {
+        idleDrain = true;
+        armGrace();
+        drainCap = setTimeout(finish, PIPE_DRAIN_MAX_MS);
+      }
     });
     child.on('close', (code) => {
       if (code !== null) result.code = code;

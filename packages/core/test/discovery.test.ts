@@ -4,8 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { runGit } from '../src/git/runner';
 import { discoverRepos, originMatches, parseOrigin, mapLimit, ORIGIN_READ_CONCURRENCY, DiscoverOptions } from '../src/discovery';
-import { TestRepo } from './helpers/testRepo';
-import { makeTempDir, removeTree } from './helpers/testRepo';
+import { makeTempDir, removeTree, TestRepo } from './helpers/testRepo';
 
 const T = 60000;
 const dirs: string[] = [];
