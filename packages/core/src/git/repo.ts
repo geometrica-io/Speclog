@@ -303,7 +303,7 @@ export const FETCH_SSH_COMMAND = 'ssh -o BatchMode=yes -o ServerAliveInterval=15
 export function fetchArgs(): string[] {
   // An https transfer below 1 byte/s for 60 s is aborted, so a stalled fetch cannot hang forever.
   return ['-c', 'credential.interactive=false', '-c', 'http.lowSpeedLimit=1', '-c', 'http.lowSpeedTime=60',
-    'fetch', '--prune', 'origin'];
+    'fetch', '--quiet', '--prune', 'origin'];
 }
 
 /**

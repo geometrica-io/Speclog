@@ -409,7 +409,7 @@ describe('git repo queries', () => {
     expect(args).toContain('credential.interactive=false');
     expect(args).toContain('http.lowSpeedLimit=1');
     expect(args).toContain('http.lowSpeedTime=60');
-    expect(args.slice(-3)).toEqual(['fetch', '--prune', 'origin']);
+    expect(args.slice(-4)).toEqual(['fetch', '--quiet', '--prune', 'origin']);
     const o = fetchOptions(false);
     expect(o.timeoutMs).toBe(60000);
     expect(o.survivesCancel).toBe(true);
