@@ -288,14 +288,13 @@ export async function objectIds(repo: string, specs: string[], signal?: AbortSig
 
 /**
  * True when the working tree or index has changes (tracked or untracked, not ignored) under
- * pathspecs; [] = the whole repository. false when git fails. --no-optional-locks: status
- * does not write the index.
+ * pathspecs; [] = the whole repository. --no-optional-locks: status does not write the index.
  */
-export async function hasUncommittedChanges(repo: string, pathspecs: string[], signal?: AbortSignal): Promise<boolean> {
+export async function hasUncommittedChanges(repo: string, pathspecs: string[], signal?: AbortSignal): Promise<RepoResult<boolean>> {
   const r = await runGit(repo, ['--no-optional-locks', '-c', 'core.quotepath=false', 'status', '--porcelain', '-z',
     '--untracked-files=all', '--', ...pathspecs], { signal });
-  if (failure(r, 'git status')) return false;
-  return r.out.length > 0;
+  const error = failure(r, 'git status');
+  return { value: !error && r.out.length > 0, error };
 }
 
 export const FETCH_SSH_COMMAND = 'ssh -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4';
@@ -315,7 +314,7 @@ export function fetchOptions(userSsh: boolean): GitOptions & { env: Record<strin
   const env: Record<string, string> = { GCM_INTERACTIVE: 'never' };
   // ssh: never prompt, and give up on a dead connection after about a minute.
   if (!userSsh) env.GIT_SSH_COMMAND = FETCH_SSH_COMMAND;
-  return { timeoutMs: 60000, env };
+  return { timeoutMs: 60000, env, survivesCancel: true };
 }
 
 export async function userSshConfigured(repo: string, signal?: AbortSignal): Promise<boolean> {
@@ -325,7 +324,8 @@ export async function userSshConfigured(repo: string, signal?: AbortSignal): Pro
 }
 
 /**
- * fetch --prune origin with a 60 s limit; never prompts (no terminal, no credential window). A
+ * fetch --prune origin with a 60 s limit; never prompts (no terminal, no credential window) and
+ * is not killed by an abort (which only stops waiting) or by this process exiting. A
  * stalled transfer still ends: https via http.lowSpeedLimit/Time, ssh via keep-alive limits
  * (unless the user set their own ssh command). value: the raw result; error "git fetch: ...".
  */

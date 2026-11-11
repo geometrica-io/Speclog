@@ -109,4 +109,67 @@ describe('runGit', () => {
     expect(r.launched).toBe(false);
     expect(r.cancelled).toBe(true);
   });
+
+  // A grandchild keeps writing to stdout for ~1 s after git itself has exited.
+  const lateWriter = ['-c', 'alias.w=!(for i in $(seq 1 20); do sleep 0.05; echo line$i; done) &', 'w'];
+
+  it('output written after git exits is not truncated', async () => {
+    const r = await runGit('.', lateWriter, { timeoutMs: 15000 });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('line1\n');
+    expect(r.out).toContain('line20\n');
+  }, 20000);
+
+  it('a normal exit is never reported as timed out or cancelled', async () => {
+    // The timeout and the abort fire after git exited but while the grandchild still writes.
+    const t = await runGit('.', lateWriter, { timeoutMs: 700 });
+    expect(t.code).toBe(0);
+    expect(t.timedOut).toBe(false);
+    expect(t.out).toContain('line20\n');
+
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 700);
+    const c = await runGit('.', lateWriter, { signal: ac.signal });
+    expect(c.code).toBe(0);
+    expect(c.cancelled).toBe(false);
+    expect(c.out).toContain('line20\n');
+  }, 20000);
+
+  const markerCmd = (name: string, seconds: number) => {
+    const marker = path.join(os.tmpdir(), `speclog_${name}_${process.pid}_${Date.now()}`);
+    const args = ['-c', `alias.m=!sh -c 'sleep ${seconds}; echo x > "${marker.split(path.sep).join('/')}"'`, 'm'];
+    return { marker, args };
+  };
+
+  it('survivesCancel: an abort stops waiting but does not kill git', async () => {
+    const { marker, args } = markerCmd('survive', 1);
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 300);
+    const t0 = Date.now();
+    const r = await runGit('.', args, { signal: ac.signal, survivesCancel: true });
+    expect(r.cancelled).toBe(true);
+    expect(r.timedOut).toBe(false);
+    expect(ms(t0)).toBeLessThan(900);
+    await new Promise((res) => setTimeout(res, 3000));
+    expect(fs.existsSync(marker)).toBe(true); // git finished its work
+    fs.rmSync(marker, { force: true });
+  }, 15000);
+
+  it('survivesCancel: the timeout still kills, also after an abort', async () => {
+    const a = markerCmd('timeout', 2);
+    const r = await runGit('.', a.args, { timeoutMs: 500, survivesCancel: true });
+    expect(r.timedOut).toBe(true);
+
+    const b = markerCmd('abort_timeout', 2);
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 200);
+    const c = await runGit('.', b.args, { timeoutMs: 800, signal: ac.signal, survivesCancel: true });
+    expect(c.cancelled).toBe(true);
+    expect(c.timedOut).toBe(false);
+
+    await new Promise((res) => setTimeout(res, 3500));
+    expect(fs.existsSync(a.marker)).toBe(false);
+    expect(fs.existsSync(b.marker)).toBe(false);
+    expect(c.timedOut).toBe(false); // the result handed out does not change afterwards
+  }, 15000);
 });

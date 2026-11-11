@@ -412,6 +412,7 @@ describe('git repo queries', () => {
     expect(args.slice(-3)).toEqual(['fetch', '--prune', 'origin']);
     const o = fetchOptions(false);
     expect(o.timeoutMs).toBe(60000);
+    expect(o.survivesCancel).toBe(true);
     expect(o.env).toEqual({ GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: FETCH_SSH_COMMAND });
     expect(FETCH_SSH_COMMAND).toBe('ssh -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4');
     const own = fetchOptions(true); // the user's ssh command is left alone
@@ -437,6 +438,29 @@ describe('git repo queries', () => {
     }
     await t.work.git(['config', 'core.sshCommand', 'ssh -i mykey']);
     expect(await userSshConfigured(t.work.dir)).toBe(true);
+
+    // Outlives: an abort only stops waiting; git completes the fetch and leaves no lock file.
+    expect((await runGit(t.bare, ['update-ref', 'refs/heads/late', await t.work.head()])).code).toBe(0);
+    await t.work.git(['config', 'remote.origin.uploadpack', 'sleep 2; git-upload-pack']);
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 300);
+    const t0 = Date.now();
+    const cancelled = await fetch(t.work.dir, ac.signal);
+    expect(cancelled.value.cancelled).toBe(true);
+    expect(cancelled.error).toBe('git fetch: cancelled');
+    expect(Date.now() - t0).toBeLessThan(1500);
+    const lateRef = async () => (await t.work.git(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/late'])).code === 0;
+    expect(await lateRef()).toBe(false); // not fetched yet when the wait was abandoned
+    let landed = false;
+    for (let i = 0; i < 75 && !landed; i++) {
+      await new Promise((res) => setTimeout(res, 200));
+      landed = await lateRef();
+    }
+    expect(landed).toBe(true);
+    await new Promise((res) => setTimeout(res, 1000)); // let git exit
+    const locks = (fs.readdirSync(path.join(t.work.dir, '.git'), { recursive: true }) as string[])
+      .filter((f) => f.endsWith('.lock'));
+    expect(locks).toEqual([]);
   }, T);
 
   it("list files: a root file named '--' and an empty dir argument", async () => {
@@ -452,16 +476,25 @@ describe('git repo queries', () => {
 
   it('uncommitted change under backlog/ is detected', async () => {
     const r = await repo();
+    const hasUncommitted = async (dir: string, specs: string[]) => {
+      const u = await hasUncommittedChanges(dir, specs);
+      expect(u.error).toBe('');
+      return u.value;
+    };
     await r.commit('init', { 'backlog/tasks/task-1 - A.md': 'a\n', 'src/x.txt': 'x' });
-    expect(await hasUncommittedChanges(r.dir, ['backlog', 'docs/tasks'])).toBe(false);
+    expect(await hasUncommitted(r.dir, ['backlog', 'docs/tasks'])).toBe(false);
     r.write('src/x.txt', 'changed'); // outside the pathspecs
-    expect(await hasUncommittedChanges(r.dir, ['backlog', 'docs/tasks'])).toBe(false);
+    expect(await hasUncommitted(r.dir, ['backlog', 'docs/tasks'])).toBe(false);
     r.write('backlog/tasks/task-1 - A.md', 'edited\n');
-    expect(await hasUncommittedChanges(r.dir, ['backlog', 'docs/tasks'])).toBe(true);
+    expect(await hasUncommitted(r.dir, ['backlog', 'docs/tasks'])).toBe(true);
     await r.commit('edit');
-    expect(await hasUncommittedChanges(r.dir, ['backlog'])).toBe(false);
+    expect(await hasUncommitted(r.dir, ['backlog'])).toBe(false);
     r.write('backlog/tasks/task-2 - Yeni görev.md', 'new\n'); // untracked file counts too
-    expect(await hasUncommittedChanges(r.dir, ['backlog'])).toBe(true);
+    expect(await hasUncommitted(r.dir, ['backlog'])).toBe(true);
+    // A git failure is reported, not taken as "clean".
+    const bad = await hasUncommittedChanges(`${r.dir}/no such dir`, ['backlog']);
+    expect(bad.value).toBe(false);
+    expect(bad.error.startsWith('git status: ')).toBe(true);
   }, T);
 
   it('cancelled query reports cancelled', async () => {
