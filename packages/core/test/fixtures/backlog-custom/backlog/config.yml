@@ -1,0 +1,10 @@
+project_name: "Custom"
+default_status: "Backlog"
+statuses:
+  - Backlog
+  - Doing
+  - Review
+  - Shipped
+labels: []
+date_format: yyyy-mm-dd
+task_prefix: "task"

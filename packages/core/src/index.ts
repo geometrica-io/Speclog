@@ -5,3 +5,4 @@ export * from './git/runner';
 export * from './git/commitRefs';
 export * from './git/repo';
 export * from './discovery';
+export * from './adapters';
