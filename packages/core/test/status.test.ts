@@ -359,7 +359,8 @@ describe('status engine (Speclog)', () => {
     expect(ib.commits.map((c) => c.hash)).toEqual(['h1']);
     expect(ia.status).toBe('open');
     expect(ia.commits).toEqual([]);
-    expect(w.ambiguousRepoRefs).toEqual([{ repo: 'App', hash: 'h2', refRepo: 'lib' }, { repo: 'App', hash: 'h2', refRepo: 'Lib' }]);
+    // One row per commit and name, ignoring the name's case.
+    expect(w.ambiguousRepoRefs).toEqual([{ repo: 'App', hash: 'h2', refRepo: 'lib' }]);
     expect(w.unknownRefs).toEqual([{ repo: 'App', hash: 'h3', refRepo: 'carol/Lib', refId: 'L1' }]);
     // Dependencies follow the same repository rule.
     expect(findDependency(w, 'App', 'bob/Lib:L1')).toBe(ib);
@@ -395,12 +396,61 @@ describe('status engine (Speclog)', () => {
     const a = repo('R', [prog('a.md', [mkItem('A1')])]);
     const b = repo('R', [prog('a.md', [mkItem('B1')])]);
     b.repo.key = a.repo.key; // the same origin URL
-    b.mainCommits.push(commit('h1', '2026-11-05', [ref('', 'B1')]));
+    b.repo.path = '/clone2/R';
+    b.mainCommits.push(commit('h1', '2026-11-05', [ref('', 'B1'), ref('', 'A1')]));
     const w = resolveAll([a, b], 'unverified');
-    expect(must(findItem(w, 'R', 'A1')).status).toBe('open');
-    expect(findItem(w, 'R', 'B1')).toBeUndefined(); // a shared name or key gives the first repository
-    const rb = w.items.find((r) => r.item.id === 'B1')!;
+    const ra = must(findItem(w, a.repo.path, 'A1'));
+    const rb = must(findItem(w, '/clone2/R', 'B1'));
+    expect(ra.repoPath).toBe(a.repo.path);
+    expect(rb.repoPath).toBe('/clone2/R');
     expect(rb.status).toBe('done');
+    // A Task line in clone B does not close clone A's item.
+    expect(ra.status).toBe('open');
+    expect(w.unknownRefs).toEqual([{ repo: 'R', hash: 'h1', refRepo: '', refId: 'A1' }]);
+    // A shared name or key gives the first clone; its path picks the clone.
+    expect(findItem(w, 'R', 'A1')).toBe(ra);
+    expect(findItem(w, a.repo.key, 'B1')).toBeUndefined();
+    expect(findItem(w, '/clone2/R', 'A1')).toBeUndefined();
+    expect(findDependency(w, '/clone2/R', 'B1')).toBe(rb);
+  });
+
+  it('clones of one origin are one repository for Task: Name:Id', () => {
+    const a = repo('Lib', [prog('a.md', [mkItem('X')])], 'alice');
+    const b = repo('Lib', [prog('a.md', [mkItem('X')])], 'alice');
+    b.repo.path = '/clone2/Lib';
+    const app = repo('App', []);
+    app.mainCommits.push(commit('h1', '2026-11-05', [ref('Lib', 'X')]));
+    const w = resolveAll([a, b, app], 'unverified');
+    expect(w.ambiguousRepoRefs).toEqual([]);
     expect(w.unknownRefs).toEqual([]);
+    const first = must(findItem(w, a.repo.path, 'X'));
+    expect(first.status).toBe('done');
+    expect(first.commits.map((c) => c.repo)).toEqual(['App']);
+    expect(must(findItem(w, '/clone2/Lib', 'X')).status).toBe('open');
+    expect(findDependency(w, 'App', 'lib:X')).toBe(first);
+  });
+
+  it('a bare name naming the committing repository resolves to it', () => {
+    const a = repo('Lib', [prog('a.md', [mkItem('L1')])], 'alice');
+    const b = repo('Lib', [prog('a.md', [mkItem('L1')])], 'bob');
+    b.mainCommits.push(commit('h1', '2026-11-05', [ref('LIB', 'L1')]));
+    const w = resolveAll([a, b], 'unverified');
+    expect(w.ambiguousRepoRefs).toEqual([]);
+    expect(must(findItem(w, b.repo.path, 'L1')).status).toBe('done');
+    expect(must(findItem(w, a.repo.path, 'L1')).status).toBe('open');
+    expect(findDependency(w, b.repo.path, 'lib:L1')).toBe(findItem(w, b.repo.path, 'L1'));
+    expect(findDependency(w, a.repo.path, 'Lib:L1')).toBe(findItem(w, a.repo.path, 'L1'));
+  });
+
+  it('findItem accepts a repository key, path or name (name ignoring case)', () => {
+    const s = repo('Repo', [prog('a.md', [mkItem('S1')])]);
+    s.repo.key = 'https://example.com/o/Repo.git';
+    s.repo.path = '/work/Repo';
+    const w = one(s);
+    const r = must(findItem(w, 'Repo', 'S1'));
+    expect(findItem(w, 'repo', 'S1')).toBe(r);
+    expect(findItem(w, 'https://example.com/o/Repo.git', 'S1')).toBe(r);
+    expect(findItem(w, '/work/Repo', 'S1')).toBe(r);
+    expect(findItem(w, '/WORK/REPO', 'S1')).toBeUndefined();
   });
 });

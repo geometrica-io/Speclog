@@ -15,7 +15,10 @@ export interface CommitLink { repo: string; hash: string; date: string; subject:
 
 export interface ResolvedItem {
   repo: string;
+  /** Per-repository settings key (origin URL, else path); clones of one origin share it. */
   repoKey: string;
+  /** RepoInfo.path: unique per clone. */
+  repoPath: string;
   /** A program inside Workspace.snapshots. */
   program: Program;
   item: Item;
@@ -43,6 +46,15 @@ export interface Workspace {
   duplicates: { repo: string; id: string; paths: string[] }[];
   /** A bare repository name in a Task line that matches several repositories (resolves nowhere). */
   ambiguousRepoRefs: { repo: string; hash: string; refRepo: string }[];
+  /** repoPath -> that repository's ids, for findItem / findDependency. */
+  itemIndex: Map<string, RepoItemIndex>;
+}
+
+/** Ids of one repository's items, as indexes into Workspace.items. */
+export interface RepoItemIndex {
+  exact: Map<string, number>;
+  /** Folded id -> item, case-insensitive formats (Backlog.md) only. */
+  foldedCi: Map<string, number>;
 }
 
 /** Formats whose status is written by hand, so a "done" in the file needs git evidence. */
@@ -61,10 +73,12 @@ function caseInsensitive(format: SourceFormat): boolean {
 type RepoMatch = { kind: 'found'; index: number } | { kind: 'unknown' } | { kind: 'ambiguous' };
 
 /**
- * Resolves the repository part of "Repo:Id": "name" matches a repository name ignoring case,
- * "owner/name" matches owner and name ignoring case. Several matches are ambiguous.
+ * Resolves the repository part of "Repo:Id" written in repository self: "name" matches a repository
+ * name ignoring case, "owner/name" matches owner and name ignoring case. Clones of one origin (same
+ * key) are one repository, whose target is the first clone. A bare name naming self resolves to
+ * self; otherwise several distinct repositories are ambiguous.
  */
-function resolveRepo(snapshots: readonly RepoSnapshot[], name: string): RepoMatch {
+function resolveRepo(snapshots: readonly RepoSnapshot[], name: string, self: number): RepoMatch {
   const slash = name.lastIndexOf('/');
   const owner = slash === -1 ? null : fold(name.slice(0, slash));
   const bare = fold(slash === -1 ? name : name.slice(slash + 1));
@@ -75,21 +89,26 @@ function resolveRepo(snapshots: readonly RepoSnapshot[], name: string): RepoMatc
     hits.push(k);
   });
   if (hits.length === 0) return { kind: 'unknown' };
-  if (hits.length > 1) return { kind: 'ambiguous' };
+  if (owner === null && hits.includes(self)) return { kind: 'found', index: self };
+  if (new Set(hits.map((k) => snapshots[k].repo.key)).size > 1) return { kind: 'ambiguous' };
   return { kind: 'found', index: hits[0] };
 }
 
+/** The item an id refers to: exact, else ignoring case among case-insensitive formats. */
+function lookup(index: RepoItemIndex, id: string): number | undefined {
+  return index.exact.get(id) ?? index.foldedCi.get(fold(id));
+}
+
 /** Item lookup of one repository: exact ids, plus folded ids of case-insensitive formats. */
-class RepoIndex {
-  private readonly exact = new Map<string, number>();
-  /** Folded id -> item, case-insensitive formats only. */
-  private readonly foldedCi = new Map<string, number>();
+class RepoIndex implements RepoItemIndex {
+  readonly exact = new Map<string, number>();
+  readonly foldedCi = new Map<string, number>();
   /** Folded id -> first item of any format. */
   private readonly foldedAny = new Map<string, number>();
 
   /** The item a Task line id refers to. */
   find(id: string): number | undefined {
-    return this.exact.get(id) ?? this.foldedCi.get(fold(id));
+    return lookup(this, id);
   }
 
   /** The existing item a new item (format, id) clashes with: same id, ignoring case if either side ignores it. */
@@ -117,16 +136,11 @@ interface Acc {
   linkByKey: Map<string, number>;
 }
 
-/**
- * The snapshot each resolved item came from. Repository keys may repeat (two clones of one origin),
- * so findItem matches items by their snapshot, not by key.
- */
-const ownerOf = new WeakMap<ResolvedItem, RepoSnapshot>();
-
 const trustKey = (format: SourceFormat, id: string) => `${format}\0${normalizeId(format, id)}`;
 
 export function resolveAll(snapshots: RepoSnapshot[], mode: UnverifiedMode): Workspace {
-  const w: Workspace = { snapshots: [...snapshots], items: [], unknownRefs: [], duplicates: [], ambiguousRepoRefs: [] };
+  const w: Workspace = { snapshots: [...snapshots], items: [], unknownRefs: [], duplicates: [], ambiguousRepoRefs: [],
+    itemIndex: new Map() };
   const indexes: RepoIndex[] = [];
   const repoOfItem: number[] = []; // item -> snapshot index
 
@@ -134,14 +148,14 @@ export function resolveAll(snapshots: RepoSnapshot[], mode: UnverifiedMode): Wor
   w.snapshots.forEach((s, ri) => {
     const index = new RepoIndex();
     indexes.push(index);
+    if (!w.itemIndex.has(s.repo.path)) w.itemIndex.set(s.repo.path, { exact: index.exact, foldedCi: index.foldedCi });
     const add = (p: Program, t: Item, branchOnly: boolean) => {
       index.add(p.format, t.id, w.items.length);
       repoOfItem.push(ri);
       const r: ResolvedItem = {
-        repo: s.repo.name, repoKey: s.repo.key, program: p, item: t, status: 'open', historical: false,
+        repo: s.repo.name, repoKey: s.repo.key, repoPath: s.repo.path, program: p, item: t, status: 'open', historical: false,
         trustedFromFile: false, flaggedUnverified: false, branchOnly, doneDate: '', branches: [], commits: [],
       };
-      ownerOf.set(r, s);
       w.items.push(r);
     };
     const paths = new Map<number, string[]>(); // first item -> paths holding its id
@@ -180,9 +194,9 @@ export function resolveAll(snapshots: RepoSnapshot[], mode: UnverifiedMode): Wor
       const handle = (ref: TaskRef, closes: boolean) => {
         let target = ri;
         if (ref.repo) {
-          const m = resolveRepo(w.snapshots, ref.repo);
+          const m = resolveRepo(w.snapshots, ref.repo, ri);
           if (m.kind === 'ambiguous') {
-            const key = [s.repo.key, c.hash, ref.repo].join('\n');
+            const key = [ri, c.hash, fold(ref.repo)].join('\n');
             if (!seenAmbiguous.has(key)) {
               seenAmbiguous.add(key);
               w.ambiguousRepoRefs.push({ repo: s.repo.name, hash: c.hash, refRepo: ref.repo });
@@ -193,7 +207,7 @@ export function resolveAll(snapshots: RepoSnapshot[], mode: UnverifiedMode): Wor
         }
         const it = target === -1 ? undefined : indexes[target].find(ref.id);
         if (it === undefined) {
-          const key = [s.repo.key, c.hash, ref.repo, ref.id].join('\n');
+          const key = [ri, c.hash, ref.repo, ref.id].join('\n');
           if (!seenUnknown.has(key)) {
             seenUnknown.add(key);
             w.unknownRefs.push({ repo: s.repo.name, hash: c.hash, refRepo: ref.repo, refId: ref.id });
@@ -269,33 +283,36 @@ export function resolveAll(snapshots: RepoSnapshot[], mode: UnverifiedMode): Wor
   return w;
 }
 
-/** First snapshot whose key is repo, else the first whose name is repo; -1 if none. */
+/** The snapshot repo names: a key or path (exact), else a name ignoring case; the first such; -1 if none. */
 function snapshotIndex(w: Workspace, repo: string): number {
-  const byKey = w.snapshots.findIndex((s) => s.repo.key === repo);
-  return byKey !== -1 ? byKey : w.snapshots.findIndex((s) => s.repo.name === repo);
+  const exact = w.snapshots.findIndex((s) => s.repo.key === repo || s.repo.path === repo);
+  if (exact !== -1) return exact;
+  const name = fold(repo);
+  return w.snapshots.findIndex((s) => fold(s.repo.name) === name);
 }
 
 /**
- * The item with id in repo (a repository key, or a name; a shared name gives the first such
- * repository). Ids match exactly, or ignoring case for formats whose ids ignore case.
+ * The item with id in repo (a repository key, path or name; a key or name shared by several
+ * repositories gives the first one, a path is unique). Ids match exactly, or ignoring case for
+ * formats whose ids ignore case.
  */
 export function findItem(w: Workspace, repo: string, id: string): ResolvedItem | undefined {
   const k = snapshotIndex(w, repo);
   if (k === -1) return undefined;
-  const snap = w.snapshots[k];
-  const own = w.items.filter((r) => ownerOf.get(r) === snap);
-  return own.find((r) => r.item.id === id)
-    ?? own.find((r) => caseInsensitive(r.program.format) && fold(r.item.id) === fold(id));
+  const index = w.itemIndex.get(w.snapshots[k].repo.path);
+  const i = index ? lookup(index, id) : undefined;
+  return i === undefined ? undefined : w.items[i];
 }
 
 /**
- * A depends entry of an item in fromRepo: "Id" (same repository) or "Repo:Id", where Repo follows
- * the "Task: Repo:Id" rule (name or owner/name, ignoring case; an ambiguous name resolves nowhere).
+ * A depends entry of an item in fromRepo (a key, path or name as for findItem): "Id" (same
+ * repository) or "Repo:Id", where Repo follows the "Task: Repo:Id" rule (name or owner/name ignoring
+ * case; a name shared by distinct repositories other than fromRepo resolves nowhere).
  */
 export function findDependency(w: Workspace, fromRepo: string, dep: string): ResolvedItem | undefined {
   const colon = dep.indexOf(':');
   if (colon === -1) return findItem(w, fromRepo, dep);
-  const m = resolveRepo(w.snapshots, dep.slice(0, colon));
+  const m = resolveRepo(w.snapshots, dep.slice(0, colon), snapshotIndex(w, fromRepo));
   if (m.kind !== 'found') return undefined;
-  return findItem(w, w.snapshots[m.index].repo.key, dep.slice(colon + 1));
+  return findItem(w, w.snapshots[m.index].repo.path, dep.slice(colon + 1));
 }
