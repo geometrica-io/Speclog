@@ -69,7 +69,8 @@ const SINCE_FILE = 'docs/tasks/.since';
 const TRUST_FORMATS: readonly SourceFormat[] = ['backlogMd', 'specKit'];
 const BLOB_READ_CONCURRENCY = 8;
 
-function emptySnapshot(repo: RepoInfo): RepoSnapshot {
+/** A snapshot with no data: the repository only. */
+export function emptySnapshot(repo: RepoInfo): RepoSnapshot {
   return {
     repo, main: { name: '', tipRef: '', reachRefs: [] }, formats: [], hasTaskFiles: false, programs: [], issues: [],
     mainCommits: [], branches: [], evidence: [], sinceCommit: '', hasSinceFile: false, programsAtSince: [],
