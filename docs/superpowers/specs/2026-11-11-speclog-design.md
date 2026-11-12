@@ -199,6 +199,9 @@ only touches `backlog/` gets no hook warning but is listed in Attention.
   breakdown by repository / program / area; progress percentage and its curve over time (history
   recomputed from the git state at that date). Export: single-file HTML, PDF, Markdown. Shareable with
   managers / customers.
+- **v1.1 Send to agent:** pick one item, open an agent's chat in its repository with a ready prompt
+  (ID, file, note, depends, spec, `Task:` closing rule); the result is read back from git as usual.
+  A convenience, not a headline. Design: `2026-11-12-send-to-agent-design.md`.
 - **v2 GitHub:** sign-in through VS Code's built-in GitHub authentication provider, repository list +
   selection, lightweight clone (`--filter=blob:none`) of the selected ones into the extension's own storage.
 - **v2 Agents:** `speclog` CLI (npm) and an MCP server — same core; "what is open?", "what closed in
