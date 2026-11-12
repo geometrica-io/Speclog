@@ -6,7 +6,7 @@ import { runGit } from '../src/git/runner';
 import {
   BranchTip, MainRef, isHexHash, resolveMain, listOtherBranches, logCommits, revList, listFiles,
   readBlob, grepFixed, resolveCommit, changedFiles, changedFilesSince, objectIds, fetch, fetchArgs,
-  fetchOptions, FETCH_SSH_COMMAND, userSshConfigured, hasUncommittedChanges,
+  fetchOptions, FETCH_SSH_COMMAND, userSshConfigured, hasUncommittedChanges, listTree,
 } from '../src/git/repo';
 import { TestRepo, TestRemote, TEST_BASE } from './helpers/testRepo';
 
@@ -495,6 +495,22 @@ describe('git repo queries', () => {
     const bad = await hasUncommittedChanges(`${r.dir}/no such dir`, ['backlog']);
     expect(bad.value).toBe(false);
     expect(bad.error.startsWith('git status: ')).toBe(true);
+  }, T);
+
+  it('list tree reads blobs under several pathspecs recursively', async () => {
+    const r = await repo();
+    await r.commit('init', {
+      'backlog/tasks/task-1 - Çay.md': 'a', 'backlog/config.yml': 'c', 'backlog.config.yml': 'r',
+      'specs/001-x/tasks.md': 't', 'docs/tasks/a.md': 'd', 'docs/other.md': 'o', 'backlogx.txt': 'n',
+    });
+    const t = await listTree(r.dir, 'refs/heads/main', ['backlog/', 'backlog.config.yml', 'specs/', 'docs/tasks/', 'none/']);
+    expect(t.error).toBe('');
+    expect([...t.value].sort()).toEqual([
+      'backlog.config.yml', 'backlog/config.yml', 'backlog/tasks/task-1 - Çay.md', 'docs/tasks/a.md', 'specs/001-x/tasks.md',
+    ]);
+    expect((await listTree(r.dir, 'refs/heads/main', [])).value).toEqual([]);
+    const bad = await listTree(r.dir, 'refs/heads/nope', ['docs/tasks/']);
+    expect(bad.error.startsWith('git ls-tree: ')).toBe(true);
   }, T);
 
   it('cancelled query reports cancelled', async () => {

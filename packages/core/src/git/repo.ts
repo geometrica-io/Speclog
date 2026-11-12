@@ -196,6 +196,27 @@ export async function listFiles(repo: string, ref: string, dir: string, signal?:
 }
 
 /**
+ * Files (blobs) at ref under any of pathspecs, recursively, repo-relative paths. A pathspec is a
+ * directory with a trailing "/" or a file path; one that does not exist adds nothing. [] lists nothing.
+ */
+export async function listTree(repo: string, ref: string, pathspecs: string[], signal?: AbortSignal): Promise<RepoResult<string[]>> {
+  const files: string[] = [];
+  if (pathspecs.length === 0) return { value: files, error: '' };
+  // Paths follow the ref directly (see listFiles: no "--" after --end-of-options).
+  const r = await runGit(repo, ['-c', 'core.quotepath=false', 'ls-tree', '-r', '-z', '--end-of-options', ref, ...pathspecs],
+    { signal });
+  const error = failure(r, 'git ls-tree');
+  if (error) return { value: files, error };
+  for (const rec of r.out.split('\0')) {
+    const tab = rec.indexOf('\t');
+    if (tab === -1) continue;
+    const meta = rec.slice(0, tab).split(' ');
+    if (meta.length === 3 && meta[1] === 'blob') files.push(rec.slice(tab + 1));
+  }
+  return { value: files, error: '' };
+}
+
+/**
  * Content of ref:path (UTF-8). value null when the blob cannot be read; a missing blob is not
  * an error, but git not starting, a timeout or a cancel is.
  */

@@ -6,3 +6,4 @@ export * from './git/commitRefs';
 export * from './git/repo';
 export * from './discovery';
 export * from './adapters';
+export * from './snapshot';
