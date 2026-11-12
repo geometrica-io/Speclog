@@ -1,5 +1,6 @@
 import type { Item, ParseIssue, Program } from '../model';
 import { splitLines, trim } from '../text';
+import { sortedByPath } from './files';
 import type { SourceFile, TaskSourceAdapter } from './types';
 
 /**
@@ -37,7 +38,7 @@ function specTitle(text: string): string {
   return '';
 }
 
-function parseTasks(feature: string, file: SourceFile, spec: SourceFile | undefined): Program {
+function parseTasks(feature: string, file: SourceFile, spec: SourceFile | undefined, issues: ParseIssue[]): Program {
   const program: Program = {
     path: file.path, format: 'specKit', title: (spec && specTitle(spec.text)) || feature,
     id: feature, area: '', created: '', spec: spec ? spec.path : '', items: [],
@@ -45,6 +46,7 @@ function parseTasks(feature: string, file: SourceFile, spec: SourceFile | undefi
   const lines = splitLines(stripBom(file.text));
   let group = '';
   let fence = '';
+  const seen = new Map<string, number>(); // id -> line of its first definition
   for (let li = 0; li < lines.length; li++) {
     const ln = lines[li];
     const f = /^\s*(```|~~~)/.exec(ln);
@@ -57,8 +59,15 @@ function parseTasks(feature: string, file: SourceFile, spec: SourceFile | undefi
     if (ln.startsWith('## ')) { group = trim(ln.slice(3)); continue; }
     const m = TASK_RE.exec(ln);
     if (!m) continue;
+    const id = `${feature}/${m[2]}`;
+    const first = seen.get(id);
+    if (first !== undefined) {
+      issues.push({ path: file.path, line: li + 1, kind: 'duplicate-id', detail: `${m[2]} is already defined on line ${first}` });
+      continue;
+    }
+    seen.set(id, li + 1);
     const it = newItem();
-    it.id = `${feature}/${m[2]}`;
+    it.id = id;
     it.group = group;
     it.line = li + 1;
     it.spec = program.spec;
@@ -91,7 +100,7 @@ export const specKitAdapter: TaskSourceAdapter = {
     const issues: ParseIssue[] = [];
     const tasks = new Map<string, SourceFile>();
     const specs = new Map<string, SourceFile>();
-    for (const f of files) {
+    for (const f of sortedByPath(files)) {
       const m = FILE_RE.exec(f.path);
       if (!m) continue;
       (m[2] === 'tasks' ? tasks : specs).set(m[1], f);
@@ -102,7 +111,7 @@ export const specKitAdapter: TaskSourceAdapter = {
         issues.push({ path: file.path, line: 1, kind: 'syntax', detail: `feature folder "${feature}" is not a valid id prefix` });
         continue;
       }
-      programs.push(parseTasks(feature, file, specs.get(feature)));
+      programs.push(parseTasks(feature, file, specs.get(feature), issues));
     }
     return { programs, issues };
   },

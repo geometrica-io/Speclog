@@ -52,6 +52,28 @@ describe('adapter registry', () => {
   });
 });
 
+describe('determinism', () => {
+  it('parse results do not depend on the order of the files', () => {
+    const docs: SourceFile[] = [
+      { path: 'docs/tasks/b.md', text: '# B\n\n## B.1 One\nstatus: open\n' },
+      { path: 'docs/tasks/a.md', text: '# A\n\n## A.1 One\n' },
+    ];
+    const backlog = [
+      ...loadFixture('backlog-default'),
+      { path: 'backlog/tasks/task-1 - Dup.md', text: backlogTask('TASK-1', 'Done') },
+    ];
+    const cases: [TaskSourceAdapter, SourceFile[]][] = [
+      [docsTasksAdapter, docs], [backlogMdAdapter, backlog], [specKitAdapter, loadFixture('speckit')],
+    ];
+    for (const [adapter, files] of cases) {
+      const forward = run(adapter, files);
+      const reversed = run(adapter, [...files].reverse());
+      expect(reversed).toEqual(forward);
+      expect(forward.programs.map((p) => p.path)).toEqual([...forward.programs.map((p) => p.path)].sort());
+    }
+  });
+});
+
 describe('docsTasks adapter', () => {
   it('docsTasks adapter wraps parser', () => {
     const text = '# Demo\nprogram: BL1\n\n## BL1.1 First\nstatus: open\n\n## BL1.2 Second\nstatus: partial\n';
@@ -129,13 +151,110 @@ describe('Backlog.md adapter', () => {
     expect(st.map((i) => i.fileStatusText)).toEqual(['Backlog', 'Doing', 'Review', 'Shipped']);
   });
 
-  it('backlog statuses can come from the root backlog.config.yml', () => {
+  it('backlog root backlog.config.yml with a project name wins over backlog/config.yml', () => {
+    const files: SourceFile[] = [
+      { path: 'backlog.config.yml', text: 'project_name: "Demo"\nstatuses: ["Todo", "Doing", "Finished"]\n' },
+      { path: 'backlog/config.yml', text: 'project_name: "Demo"\nstatuses: ["To Do", "Finished", "Done"]\n' },
+      { path: 'backlog/tasks/task-1 - A.md', text: backlogTask('TASK-1', 'Finished') },
+    ];
+    const r = run(backlogMdAdapter, files);
+    expect(r.issues).toEqual([]);
+    expect(byId(r.programs, 'TASK-1')!.fileDone).toBe(true);
+  });
+
+  it('backlog root config without a project name is ignored, as Backlog.md does', () => {
     const files: SourceFile[] = [
       { path: 'backlog.config.yml', text: 'statuses: ["Todo", "Doing", "Finished"]\n' },
       { path: 'backlog/tasks/task-1 - A.md', text: backlogTask('TASK-1', 'Finished') },
     ];
     const r = run(backlogMdAdapter, files);
-    expect(byId(r.programs, 'TASK-1')!.fileDone).toBe(true);
+    expect(byId(r.programs, 'TASK-1')!.stored).toBe('open'); // defaults: "Finished" is unknown
+    expect(r.issues.map((i) => i.kind)).toEqual(['bad-status']);
+  });
+
+  it('backlog root config backlog_directory picks the folder; a custom folder is reported', () => {
+    const both: SourceFile[] = [
+      { path: 'backlog/config.yml', text: 'statuses: [A, B]\n' },
+      { path: 'backlog/tasks/task-1 - A.md', text: backlogTask('TASK-1', 'A') },
+      { path: '.backlog/tasks/task-2 - B.md', text: backlogTask('TASK-2', 'To Do') },
+    ];
+    // Without a root config Backlog.md reads one folder: backlog/ (it has a config).
+    const plain = run(backlogMdAdapter, both);
+    expect(plain.programs.map((p) => p.path)).toEqual(['backlog/']);
+    expect(byId(plain.programs, 'TASK-2')).toBeUndefined();
+
+    const hidden = run(backlogMdAdapter, [
+      { path: 'backlog.config.yml', text: 'project_name: Demo\nbacklog_directory: .backlog\n' }, ...both,
+    ]);
+    expect(hidden.programs.map((p) => p.path)).toEqual(['.backlog/']);
+    expect(byId(hidden.programs, 'TASK-2')!.stored).toBe('open');
+
+    const custom = run(backlogMdAdapter, [
+      { path: 'backlog.config.yml', text: 'project_name: Demo\nbacklog_directory: planning/backlog\n' }, ...both,
+    ]);
+    expect(custom.programs).toEqual([]);
+    expect(custom.issues).toEqual([
+      { path: 'backlog.config.yml', line: 1, kind: 'unsupported', detail: expect.stringContaining('planning/backlog') },
+    ]);
+  });
+
+  it('backlog alias-bomb front matter → one syntax issue, other tasks still read', () => {
+    const bomb =
+      '---\nid: TASK-50\ntitle: Bomb\nstatus: To Do\n' +
+      'a: &a ["x", "x", "x", "x", "x", "x", "x", "x", "x"]\n' +
+      'b: &b [*a, *a, *a, *a, *a, *a, *a, *a, *a]\n' +
+      'c: &c [*b, *b, *b, *b, *b, *b, *b, *b, *b]\n' +
+      'd: &d [*c, *c, *c, *c, *c, *c, *c, *c, *c]\n' +
+      'e: &e [*d, *d, *d, *d, *d, *d, *d, *d, *d]\n' +
+      'f: [*e, *e, *e, *e, *e, *e, *e, *e, *e]\n---\n';
+    const oneAlias = '---\nid: TASK-51\ntitle: &t Alias\nstatus: To Do\nnote: *t\n---\n';
+    const r = run(backlogMdAdapter, [
+      ...def,
+      { path: 'backlog/tasks/task-50 - Bomb.md', text: bomb },
+      { path: 'backlog/tasks/task-51 - Alias.md', text: oneAlias },
+    ]);
+    expect(r.issues.map((i) => [i.path, i.kind])).toEqual([
+      ['backlog/tasks/task-50 - Bomb.md', 'syntax'],
+      ['backlog/tasks/task-51 - Alias.md', 'syntax'],
+    ]);
+    expect(byId(r.programs, 'TASK-50')).toBeUndefined();
+    expect(allItems(r.programs)).toHaveLength(6);
+
+    const cfg = run(backlogMdAdapter, [
+      { path: 'backlog/config.yml', text: 'x: &x [a, b]\ny: *x\nstatuses: [A, B]\n' },
+      { path: 'backlog/tasks/task-1 - A.md', text: backlogTask('TASK-1', 'B') },
+    ]);
+    expect(byId(cfg.programs, 'TASK-1')!.fileDone).toBe(true); // statuses entry recovered on its own
+  });
+
+  it('backlog same id in two files → duplicate-id on the later path, later file dropped', () => {
+    const files: SourceFile[] = [
+      { path: 'backlog/tasks/task-1 - B copy.md', text: backlogTask('task-1', 'Done') },
+      { path: 'backlog/tasks/task-1 - A.md', text: backlogTask('TASK-1', 'To Do') },
+    ];
+    const r = run(backlogMdAdapter, files);
+    expect(allItems(r.programs).map((i) => [i.id, i.stored])).toEqual([['TASK-1', 'open']]);
+    expect(r.issues).toEqual([
+      { path: 'backlog/tasks/task-1 - B copy.md', line: 1, kind: 'duplicate-id', detail: expect.stringContaining('task-1 - A.md') },
+    ]);
+  });
+
+  it('backlog id with a slash is a syntax issue', () => {
+    const r = run(backlogMdAdapter, [{ path: 'backlog/tasks/task-1 - A.md', text: backlogTask('TASK/1', 'To Do') }]);
+    expect(allItems(r.programs)).toEqual([]);
+    expect(r.issues.map((i) => i.kind)).toEqual(['syntax']);
+  });
+
+  it('backlog empty or missing status → missing-status', () => {
+    const r = run(backlogMdAdapter, [
+      { path: 'backlog/tasks/task-1 - A.md', text: backlogTask('TASK-1', '') },
+      { path: 'backlog/tasks/task-2 - B.md', text: '---\nid: TASK-2\ntitle: B\n---\n' },
+    ]);
+    expect(allItems(r.programs).map((i) => i.stored)).toEqual(['open', 'open']);
+    expect(r.issues.map((i) => [i.path, i.line, i.kind])).toEqual([
+      ['backlog/tasks/task-1 - A.md', 1, 'missing-status'],
+      ['backlog/tasks/task-2 - B.md', 1, 'missing-status'],
+    ]);
   });
 
   it('backlog missing config uses defaults', () => {
@@ -373,6 +492,17 @@ describe('Spec Kit adapter', () => {
     expect(r.programs).toEqual([]);
     expect(r.issues).toEqual([
       { path: 'specs/my feature/tasks.md', line: 1, kind: 'syntax', detail: expect.any(String) },
+    ]);
+  });
+
+  it('speckit same T-id twice in one tasks.md → duplicate-id on the second, second dropped', () => {
+    const text = '## Phase 1\n\n- [ ] T001 First\n- [x] T001 Again\n- [ ] T002 Next\n';
+    const r = run(specKitAdapter, [{ path: 'specs/001-a/tasks.md', text }]);
+    expect(allItems(r.programs).map((i) => [i.id, i.title])).toEqual([
+      ['001-a/T001', 'First'], ['001-a/T002', 'Next'],
+    ]);
+    expect(r.issues).toEqual([
+      { path: 'specs/001-a/tasks.md', line: 4, kind: 'duplicate-id', detail: expect.stringContaining('line 3') },
     ]);
   });
 

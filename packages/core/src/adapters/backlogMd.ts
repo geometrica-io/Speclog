@@ -6,15 +6,17 @@ import type { SourceFile, TaskSourceAdapter } from './types';
 /**
  * Backlog.md adapter (spec §4.3). Format checked against Backlog.md v1.55.3:
  * `<dir>/tasks/*.md` and `<dir>/completed/*.md` are read; `drafts/` and `archive/` are skipped.
- * `<dir>` is `backlog` or the hidden `.backlog`. Statuses come from the root `backlog.config.yml`,
- * else `<dir>/config.yml`, else `<dir>/config.yaml`, else the Backlog.md defaults.
+ * `<dir>` is `backlog` or the hidden `.backlog`, one of them, picked as Backlog.md does. Statuses
+ * come from the root `backlog.config.yml` when it names a project, else `<dir>/config.yml`, else
+ * `<dir>/config.yaml`, else the Backlog.md defaults.
  */
 
 export const DEFAULT_BACKLOG_STATUSES: readonly string[] = ['To Do', 'In Progress', 'Done'];
 
 const DIRS = ['backlog', '.backlog'];
 const ROOT_CONFIG = 'backlog.config.yml';
-const ID_RE = /^[A-Za-z0-9._/-]+$/;
+/** Backlog.md ids never contain `/` (only Spec Kit ids do). */
+const ID_RE = /^[A-Za-z0-9._-]+$/;
 /** File name `task-12 - Title.md` / `back-3.1 - Title.md` → id prefix. */
 const FILE_ID_RE = /^([A-Za-z][A-Za-z0-9_]*-\d+(?:\.\d+)*)(?: - (.*))?\.md$/;
 
@@ -74,6 +76,25 @@ function preprocess(lines: string[]): string[] {
   });
 }
 
+type YamlResult = { ok: true; data: unknown } | { ok: false; line: number; detail: string };
+
+/**
+ * Parses YAML into plain data. Aliases are refused (`maxAliasCount: 0`): Backlog.md files never
+ * need them, and an alias bomb would otherwise expand in `toJS`. Never throws.
+ */
+function loadYaml(text: string): YamlResult {
+  try {
+    const doc = parseDocument(text);
+    if (doc.errors.length > 0) {
+      const e = doc.errors[0];
+      return { ok: false, line: e.linePos ? e.linePos[0].line : 1, detail: yamlMessage(e.message) };
+    }
+    return { ok: true, data: doc.toJS({ maxAliasCount: 0 }) };
+  } catch (e) {
+    return { ok: false, line: 1, detail: yamlMessage(e instanceof Error ? e.message : String(e)) };
+  }
+}
+
 type FrontMatter = { ok: true; data: Record<string, unknown> } | { ok: false; line: number; detail: string };
 
 function readFrontMatter(text: string): FrontMatter {
@@ -85,17 +106,15 @@ function readFrontMatter(text: string): FrontMatter {
     if (lines[i].trimEnd() === '---') { end = i; break; }
   }
   if (end === -1) return { ok: false, line: 1, detail: 'YAML front matter is not closed' };
-  const doc = parseDocument(preprocess(lines.slice(1, end)).join('\n'));
-  if (doc.errors.length > 0) {
-    const e = doc.errors[0];
-    const at = e.linePos ? e.linePos[0].line + 1 : 1; // +1 for the opening ---
-    return { ok: false, line: at, detail: `invalid YAML front matter: ${yamlMessage(e.message)}` };
-  }
-  const data: unknown = doc.toJS();
-  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, line: 1, detail: 'YAML front matter is not a mapping' };
-  }
-  return { ok: true, data: data as Record<string, unknown> };
+  const y = loadYaml(preprocess(lines.slice(1, end)).join('\n'));
+  // +1 for the opening --- line.
+  if (!y.ok) return { ok: false, line: y.line + 1, detail: `invalid YAML front matter: ${y.detail}` };
+  if (!isMapping(y.data)) return { ok: false, line: 1, detail: 'YAML front matter is not a mapping' };
+  return { ok: true, data: y.data };
+}
+
+function isMapping(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
 /** First line of a yaml error, without its position (that counts from the front matter, not the file). */
@@ -116,32 +135,44 @@ function statusList(v: unknown): string[] | null {
  * the file is unreadable and no `statuses` entry could be recovered.
  */
 function readStatuses(file: SourceFile, issues: ParseIssue[]): string[] | null {
-  const doc = parseDocument(file.text);
-  if (doc.errors.length === 0) {
-    const data: unknown = doc.toJS();
-    if (data && typeof data === 'object' && !Array.isArray(data)) {
-      return statusList((data as Record<string, unknown>).statuses);
-    }
-    return null;
-  }
+  const whole = loadYaml(file.text);
+  if (whole.ok) return isMapping(whole.data) ? statusList(whole.data.statuses) : null;
   const lines = file.text.split(/\r?\n/);
   const start = lines.findIndex((l) => /^statuses\s*:/.test(l));
   if (start !== -1) {
     let end = start + 1;
     while (end < lines.length && /^(\s+\S|\s*$)/.test(lines[end])) end++;
-    const part = parseDocument(lines.slice(start, end).join('\n'));
-    if (part.errors.length === 0) {
-      const data = part.toJS() as Record<string, unknown> | null;
-      const list = data ? statusList(data.statuses) : null;
-      if (list) return list;
-    }
+    const part = loadYaml(lines.slice(start, end).join('\n'));
+    const list = part.ok && isMapping(part.data) ? statusList(part.data.statuses) : null;
+    if (list) return list;
   }
-  const e = doc.errors[0];
   issues.push({
-    path: file.path, line: e.linePos ? e.linePos[0].line : 1, kind: 'syntax',
-    detail: `invalid YAML, default statuses used: ${yamlMessage(e.message)}`,
+    path: file.path, line: whole.line, kind: 'syntax',
+    detail: `invalid YAML, default statuses used: ${whole.detail}`,
   });
   return null;
+}
+
+/**
+ * Line-based read of `project_name` / `backlog_directory`, as Backlog.md's
+ * `parseBacklogConfigMetadata` does: the root config only counts when it names a project.
+ */
+function rootConfigMeta(text: string): { projectName: string; backlogDirectory: string } {
+  let projectName = '';
+  let backlogDirectory = '';
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) continue;
+    const colon = line.indexOf(':');
+    if (colon === -1) continue;
+    const key = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim().replace(/^['"]|['"]$/g, '');
+    if ((key === 'project_name' || key === 'projectName') && value) projectName = value;
+    else if (key === 'backlog_directory' || key === 'backlogDirectory') {
+      backlogDirectory = value.replace(/^\.\//, '').replace(/\/+$/, '');
+    }
+  }
+  return { projectName, backlogDirectory };
 }
 
 function newItem(): Item {
@@ -152,14 +183,11 @@ function newItem(): Item {
   };
 }
 
-function parseDir(dir: string, files: SourceFile[], rootConfig: SourceFile | undefined, issues: ParseIssue[]): Program | null {
+function parseDir(dir: string, files: SourceFile[], config: SourceFile | undefined, issues: ParseIssue[]): Program | null {
   const kinds = files.map((f) => ({ f, c: classify(f.path)! }));
   const tasks = kinds.filter((k) => k.c.kind === 'task' || k.c.kind === 'completed');
   if (tasks.length === 0) return null;
 
-  const config = rootConfig
-    ?? kinds.find((k) => k.c.kind === 'config' && k.c.name === 'config.yml')?.f
-    ?? kinds.find((k) => k.c.kind === 'config' && k.c.name === 'config.yaml')?.f;
   const statuses = (config && readStatuses(config, issues)) || [...DEFAULT_BACKLOG_STATUSES];
 
   const milestones = new Map<string, string>();
@@ -175,6 +203,7 @@ function parseDir(dir: string, files: SourceFile[], rootConfig: SourceFile | und
   const program: Program = {
     path: `${dir}/`, format: 'backlogMd', title: 'Backlog', id: '', area: '', created: '', spec: '', items: [],
   };
+  const seen = new Map<string, string>(); // lower-case id -> path of the file that kept it
   for (const { f, c } of tasks) {
     const issue = (line: number, kind: string, detail: string) => issues.push({ path: f.path, line, kind, detail });
     const fm = readFrontMatter(f.text);
@@ -186,6 +215,9 @@ function parseDir(dir: string, files: SourceFile[], rootConfig: SourceFile | und
     it.id = str(d.id) || (nameMatch ? nameMatch[1] : '');
     if (it.id === '') { issue(1, 'syntax', 'no id in the front matter or the file name'); continue; }
     if (!ID_RE.test(it.id)) { issue(1, 'syntax', `invalid id "${it.id}"`); continue; }
+    const first = seen.get(it.id.toLowerCase());
+    if (first !== undefined) { issue(1, 'duplicate-id', `${it.id} is already defined in ${first}`); continue; }
+    seen.set(it.id.toLowerCase(), f.path);
     it.title = str(d.title) || (nameMatch?.[2] ?? '').trim() || it.id;
 
     const status = str(d.status);
@@ -196,7 +228,9 @@ function parseDir(dir: string, files: SourceFile[], rootConfig: SourceFile | und
     } else {
       let idx = statuses.indexOf(status);
       if (idx === -1) idx = statuses.findIndex((s) => s.toLowerCase() === status.toLowerCase());
-      if (idx === -1) {
+      if (status === '') {
+        issue(1, 'missing-status', it.id);
+      } else if (idx === -1) {
         issue(1, 'bad-status', `status "${status}" is not one of: ${statuses.join(', ')}`);
       } else if (idx === statuses.length - 1 && statuses.length > 1) {
         it.stored = 'done';
@@ -224,15 +258,37 @@ export const backlogMdAdapter: TaskSourceAdapter = {
   select(paths: string[]): string[] {
     return paths.filter((p) => p === ROOT_CONFIG || classify(p) !== null);
   },
-  parse(files: SourceFile[]) {
+  parse(input: SourceFile[]) {
+    const files = [...input].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     const issues: ParseIssue[] = [];
-    const programs: Program[] = [];
-    const rootConfig = files.find((f) => f.path === ROOT_CONFIG);
-    for (const dir of DIRS) {
-      const own = files.filter((f) => classify(f.path)?.dir === dir);
-      const p = parseDir(dir, own, rootConfig, issues);
-      if (p) programs.push(p);
+    const inDir = (dir: string) => files.filter((f) => classify(f.path)?.dir === dir);
+    const folderConfig = (own: SourceFile[], dir: string) =>
+      own.find((f) => f.path === `${dir}/config.yml`) ?? own.find((f) => f.path === `${dir}/config.yaml`);
+
+    // Folder and config resolution as in Backlog.md's resolveBacklogDirectory(): a root
+    // backlog.config.yml that names a project wins; otherwise backlog/ with a config, .backlog/
+    // with a config, backlog/, .backlog/ - only one folder is read.
+    let dir = '';
+    let config: SourceFile | undefined;
+    const root = files.find((f) => f.path === ROOT_CONFIG);
+    const meta = root ? rootConfigMeta(root.text) : null;
+    if (root && meta && meta.projectName !== '') {
+      config = root;
+      if (meta.backlogDirectory !== '' && !DIRS.includes(meta.backlogDirectory)) {
+        issues.push({
+          path: ROOT_CONFIG, line: 1, kind: 'unsupported',
+          detail: `backlog_directory "${meta.backlogDirectory}" is not read; Speclog reads backlog/ and .backlog/`,
+        });
+        return { programs: [], issues };
+      }
+      dir = meta.backlogDirectory;
     }
-    return { programs, issues };
+    if (dir === '') {
+      dir = DIRS.find((d) => folderConfig(inDir(d), d)) ?? DIRS.find((d) => inDir(d).length > 0) ?? '';
+      if (dir === '') return { programs: [], issues };
+    }
+    const own = inDir(dir);
+    const p = parseDir(dir, own, config ?? folderConfig(own, dir), issues);
+    return { programs: p ? [p] : [], issues };
   },
 };
