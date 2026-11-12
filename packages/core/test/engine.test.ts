@@ -4,6 +4,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Engine, EngineConfig, EngineState } from '../src/engine';
+import { buildSnapshot } from '../src/snapshot';
+import { computeAttention } from '../src/attention';
 import { TestRepo, TestRemote, removeTree } from './helpers/testRepo';
 
 const T = 90000;
@@ -201,5 +203,90 @@ describe('engine', () => {
     clock.t += 61; // next discovery
     const s = await gone;
     expect(s.workspace.snapshots[0].repo.name).toBe(path.basename(a.dir));
+  }, T);
+
+  it('a throw while publishing does not break the round or let builds overlap', async () => {
+    const a = await repo('alpha', ['A1']);
+    const b = await repo('beta', ['B1']);
+    const active = new Set<string>();
+    let overlap = false;
+    let maxActive = 0;
+    // beta's first build outlasts several ticks: a round that ended early (rejected on alpha's
+    // publish) would start a second beta build next to it.
+    const slow = await fs.promises.realpath(b.dir);
+    let slowLeft = 1;
+    const build: typeof buildSnapshot = async (r, o) => {
+      if (active.has(r.path)) overlap = true;
+      active.add(r.path);
+      maxActive = Math.max(maxActive, active.size);
+      try {
+        if (r.path === slow && slowLeft-- > 0) await sleep(3000);
+        return await buildSnapshot(r, o);
+      } finally {
+        active.delete(r.path);
+      }
+    };
+    let throwing = true;
+    const attention: typeof computeAttention = (...args) => {
+      if (throwing) throw new Error('boom');
+      return computeAttention(...args);
+    };
+    const e = new Engine(config([a, b]), new FakeClock(), { buildSnapshot: build, computeAttention: attention });
+    engines.push(e);
+    const failed = waitFor(e, (s) => s.engineError.includes('boom'));
+    e.start();
+    await failed;
+    // The round still ends (busy cleared) although every publish threw.
+    await waitFor(e, (s) => !s.busy && s.engineError !== '');
+    throwing = false;
+    const next = waitFor(e, (s) => ids(s).includes('A2') && s.engineError === '');
+    await a.commit('Add A2', { 'docs/tasks/p.md': taskFile(['A1', 'A2']) });
+    const s = await next;
+    expect(ids(s)).toEqual(['A1', 'A2', 'B1']);
+    expect(overlap).toBe(false);
+    expect(maxActive).toBeLessThanOrEqual(2);
+  }, T);
+
+  it('a throwing listener does not break the engine', async () => {
+    const r = await repo('alpha', ['A1']);
+    const e = engine(config([r]));
+    e.onDidChange(() => { throw new Error('listener'); });
+    const first = waitFor(e, (s) => s.workspace.items.length === 1);
+    e.start();
+    await first;
+    const next = waitFor(e, (s) => ids(s).includes('A2'));
+    await r.commit('Add A2', { 'docs/tasks/p.md': taskFile(['A1', 'A2']) });
+    expect(ids(await next)).toEqual(['A1', 'A2']);
+  }, T);
+
+  it('updateConfig during a running round ends with results under the new config', async () => {
+    const a = await repo('alpha', ['A1']);
+    const b = await repo('beta', ['B1']);
+    const keyA = await fs.promises.realpath(a.dir);
+    const keyB = await fs.promises.realpath(b.dir);
+    const ha = await a.head();
+    const hb = await b.head();
+    const e = engine(config([a, b]));
+    e.start();
+    while (!e.current().busy) await new Promise((r) => setImmediate(r));
+    e.updateConfig(config([a, b], { trustCommits: { [keyA]: ha, [keyB]: hb } }));
+    const done = await waitFor(e, (s) => !s.busy && s.workspace.snapshots.length === 2 &&
+      s.workspace.snapshots.every((x) => x.trustCommit !== ''));
+    expect(done.workspace.snapshots.map((x) => x.trustCommit)).toEqual([ha, hb]);
+    await sleep(1500);
+    expect(e.current().workspace.snapshots.map((x) => x.trustCommit)).toEqual([ha, hb]);
+  }, T);
+
+  it('dispose returns the same promise and the state is frozen', async () => {
+    const r = await repo('alpha', ['A1']);
+    const e = engine(config([r]));
+    const first = waitFor(e, () => true);
+    e.start();
+    const s = await first;
+    expect(Object.isFrozen(s)).toBe(true);
+    expect(Object.isFrozen(e.current())).toBe(true);
+    const p1 = e.dispose();
+    expect(e.dispose()).toBe(p1);
+    await p1;
   }, T);
 });

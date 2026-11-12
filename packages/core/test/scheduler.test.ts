@@ -1,5 +1,7 @@
 // Port of ProjectManager tests/SchedulerTests.cpp (same case names) plus Speclog extras.
 import { describe, it, expect, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
 import { dueJobs, probeStamp, RepoTimers } from '../src/scheduler';
 import { TestRepo } from './helpers/testRepo';
 
@@ -89,5 +91,31 @@ describe('scheduler', () => {
     expect(s2).not.toBe(s1);
     r.write('backlog/tasks/task-1.md', 'new\n');
     expect(await probeStamp(r.dir)).not.toBe(s2);
+  }, T);
+  it('probe stamp does not follow a symlink loop', async () => {
+    const r = await TestRepo.create();
+    cleanups.push(r);
+    await r.commit('one', { 'backlog/tasks/task-1.md': 'x\n' });
+    const loop = path.join(r.dir, 'backlog', 'loop');
+    try {
+      fs.symlinkSync(path.join(r.dir, 'backlog'), loop, 'junction');
+    } catch {
+      return; // no symlink support here
+    }
+    const s = await probeStamp(r.dir);
+    expect(s).toContain('backlog/tasks/task-1.md|');
+    expect(s).toContain('backlog/loop|');
+    expect(s).not.toContain('backlog/loop/');
+  }, T);
+
+  it('probe stamp walks specs/ only when asked', async () => {
+    const r = await TestRepo.create();
+    cleanups.push(r);
+    await r.commit('one', { 'specs/001-x/tasks.md': 'x\n' });
+    expect(await probeStamp(r.dir)).toContain('specs/001-x/tasks.md|');
+    const without = await probeStamp(r.dir, { includeSpecs: false });
+    expect(without).not.toContain('specs/');
+    r.write('specs/001-x/tasks.md', 'edited\n');
+    expect(await probeStamp(r.dir, { includeSpecs: false })).toBe(without);
   }, T);
 });

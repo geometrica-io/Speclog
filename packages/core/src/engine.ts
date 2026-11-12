@@ -29,8 +29,12 @@ export interface EngineClock {
   today(): string;
 }
 
+/**
+ * Published state. Read-only: the top-level object is frozen; the nested structures are shared
+ * with the engine and must not be modified either.
+ */
 export interface EngineState {
-  workspace: Workspace;
+  readonly workspace: Workspace;
   attention: AttentionItem[];
   /** A rescan or fetch is running. */
   busy: boolean;
@@ -38,6 +42,15 @@ export interface EngineState {
   fetch: FetchState[];
   /** Folders whose repository could not be read during discovery. */
   discoveryErrors: DiscoverError[];
+  /** An internal failure while storing or publishing a scan ("" when none); the engine keeps running. */
+  engineError: string;
+}
+
+/** Test seam: replaces the functions the engine calls to build and publish. */
+export interface EngineDeps {
+  buildSnapshot: typeof buildSnapshot;
+  resolveAll: typeof resolveAll;
+  computeAttention: typeof computeAttention;
 }
 
 export const TICK_MS = 1000;
@@ -50,6 +63,8 @@ export const ERROR_RETRY_SEC = 60;
 export const STOP_WAIT_MS = 15000;
 /** A fetch failing for longer than this goes to Attention. */
 export const FETCH_FAIL_SEC = 3600;
+/** At most this many repositories are probed at once. */
+export const PROBE_CONCURRENCY = 8;
 
 function localToday(): string {
   const d = new Date();
@@ -64,6 +79,10 @@ function gitLocked(repoPath: string): boolean {
   return fs.existsSync(path.join(repoPath, '.git', 'index.lock'));
 }
 
+function message(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 function sameFetch(a: FetchState, b: FetchState): boolean {
   return a.lastOkUnix === b.lastOkUnix && a.firstFailUnix === b.firstFailUnix && a.lastError === b.lastError;
 }
@@ -73,6 +92,7 @@ export class Engine {
   private readonly clock: EngineClock;
   private readonly listeners = new Set<(s: EngineState) => void>();
   private readonly abort = new AbortController();
+  private readonly deps: EngineDeps;
 
   private repos: RepoInfo[] = [];
   /** Parallel to repos. */
@@ -93,14 +113,16 @@ export class Engine {
   private published = false;
   private timer: NodeJS.Timeout | undefined;
   private round: Promise<void> | undefined;
+  private disposing: Promise<void> | undefined;
   private state: EngineState;
 
-  constructor(cfg: EngineConfig, clock?: EngineClock) {
+  constructor(cfg: EngineConfig, clock?: EngineClock, deps?: Partial<EngineDeps>) {
     this.cfg = cfg;
     this.clock = clock ?? systemClock;
-    this.state = {
-      workspace: resolveAll([], cfg.unverifiedMode), attention: [], busy: false, fetch: [], discoveryErrors: [],
-    };
+    this.deps = { buildSnapshot, resolveAll, computeAttention, ...deps };
+    this.state = Object.freeze({
+      workspace: resolveAll([], cfg.unverifiedMode), attention: [], busy: false, fetch: [], discoveryErrors: [], engineError: '',
+    });
   }
 
   start(): void {
@@ -112,9 +134,14 @@ export class Engine {
   /**
    * No new jobs; running rebuilds are cancelled at once (never stored or published); a running
    * fetch is not killed (no lock files left behind) and is waited for at most STOP_WAIT_MS.
+   * Repeated calls return the same promise.
    */
-  async dispose(): Promise<void> {
-    if (this.disposed) return;
+  dispose(): Promise<void> {
+    if (!this.disposing) this.disposing = this.stop();
+    return this.disposing;
+  }
+
+  private async stop(): Promise<void> {
     this.disposed = true;
     this.abort.abort();
     if (this.timer) clearTimeout(this.timer);
@@ -146,8 +173,9 @@ export class Engine {
     return { dispose: () => this.listeners.delete(listener) };
   }
 
+  /** The latest state (frozen; see EngineState). */
   current(): EngineState {
-    return { ...this.state, busy: this.busy };
+    return this.state;
   }
 
   // ---- loop ----
@@ -187,8 +215,11 @@ export class Engine {
     this.rescanAll = false;
     if (all || !this.discovered || now - this.lastDiscover >= DISCOVER_SEC) await this.discover(now, all);
     if (this.disposed) return;
-    await this.runJobs(now);
-    this.setBusy(false);
+    try {
+      await this.runJobs(now);
+    } finally {
+      this.setBusy(false);
+    }
   }
 
   /** Refreshes the repository list; keeps timers, fetch states and snapshots of repositories still present. */
@@ -202,7 +233,7 @@ export class Engine {
       ({ repos: found, errors } = await discoverRepos(this.cfg.discover));
     } catch (e) {
       found = this.repos;
-      errors = [{ path: '', error: `discovery: ${e instanceof Error ? e.message : String(e)}` }];
+      errors = [{ path: '', error: `discovery: ${message(e)}` }];
     }
     if (this.disposed) return;
     const timers: RepoTimers[] = [];
@@ -227,7 +258,13 @@ export class Engine {
     this.fetchStates = fetchStates;
     this.discoveryErrors = errors;
     // A removed repository disappears at once; new ones appear after their rescan.
-    if (removed || errorsChanged || (first && found.length === 0)) this.publish();
+    if (removed || errorsChanged || (first && found.length === 0)) {
+      try {
+        this.publish();
+      } catch (e) {
+        this.internalError(e);
+      }
+    }
   }
 
   private async runJobs(now: number): Promise<void> {
@@ -243,7 +280,13 @@ export class Engine {
       const published = await this.fetchOne(i);
       if (this.disposed) return;
       const rescanned = await this.rescanChanged();
-      if (published && !rescanned) this.publish();
+      if (published && !rescanned) {
+        try {
+          this.publish();
+        } catch (e) {
+          this.internalError(e);
+        }
+      }
     }
   }
 
@@ -252,7 +295,11 @@ export class Engine {
     if (this.halted()) return false;
     const timers = this.timers;
     const repos = this.repos;
-    const stamps = await Promise.all(timers.map((t) => probeStamp(t.repo)));
+    const stamps = await mapLimit(timers, PROBE_CONCURRENCY, (t) => {
+      // specs/ is walked only where Spec Kit was found (or nothing is known yet).
+      const shown = this.snapshots.get(t.repo);
+      return probeStamp(t.repo, { includeSpecs: !shown || shown.formats.includes('specKit') });
+    });
     if (this.halted()) return false;
     stamps.forEach((s, i) => { timers[i].lastStamp = s; });
     const rescan: number[] = [];
@@ -265,17 +312,23 @@ export class Engine {
     const signal = this.abort.signal;
     const today = this.today;
     let any = false;
+    // The callback never rejects, so mapLimit only settles when every build has ended: no build
+    // outlives its round (no overlap, never more than BUILD_CONCURRENCY at once).
     await mapLimit(rescan, BUILD_CONCURRENCY, async (i) => {
       const repo = repos[i];
       let snap: RepoSnapshot;
       try {
-        snap = await buildSnapshot(repo, { today, trustCommit: this.cfg.trustCommits[repo.key], signal });
+        snap = await this.deps.buildSnapshot(repo, { today, trustCommit: this.cfg.trustCommits[repo.key], signal });
       } catch (e) {
-        snap = { ...emptySnapshot(repo), error: `snapshot: ${e instanceof Error ? e.message : String(e)}` };
+        snap = { ...emptySnapshot(repo), error: `snapshot: ${message(e)}` };
       }
-      if (this.store(timers[i], repo, stamps[i], snap)) {
-        this.publish();
-        any = true;
+      try {
+        if (this.store(timers[i], repo, stamps[i], snap)) {
+          this.publish();
+          any = true;
+        }
+      } catch (e) {
+        this.internalError(e);
       }
     });
     return any;
@@ -320,14 +373,21 @@ export class Engine {
   // ---- publishing ----
 
   private setBusy(b: boolean): void {
-    if (this.busy === b) return;
+    if (this.busy === b || this.disposed) return;
     this.busy = b;
-    if (this.published && !this.disposed) {
-      this.state = { ...this.state, busy: b };
-      this.emit();
-    }
+    this.state = Object.freeze({ ...this.state, busy: b });
+    if (this.published) this.emit();
   }
 
+  /** A failure while storing or publishing: shown on the last state, the round goes on. */
+  private internalError(e: unknown): void {
+    if (this.disposed) return;
+    this.state = Object.freeze({ ...this.state, busy: this.busy, engineError: `engine: ${message(e)}` });
+    this.published = true;
+    this.emit();
+  }
+
+  /** Throws only if resolveAll / computeAttention throw (callers catch). */
   private publish(): void {
     if (this.disposed) return;
     const snaps: RepoSnapshot[] = [];
@@ -335,18 +395,20 @@ export class Engine {
       const s = this.snapshots.get(r.path);
       if (s) snaps.push(s);
     }
-    const workspace = resolveAll(snaps, this.cfg.unverifiedMode);
+    const workspace = this.deps.resolveAll(snaps, this.cfg.unverifiedMode);
     const fetchStates = this.fetchStates.map((f) => ({ ...f }));
-    const attention = computeAttention(workspace, {
+    const attention = this.deps.computeAttention(workspace, {
       today: this.today, staleBranchDays: this.cfg.staleBranchDays, recentDays: RECENT_DAYS, fetchFailSeconds: FETCH_FAIL_SEC,
     }, fetchStates, this.clock.now());
-    this.state = { workspace, attention, busy: this.busy, fetch: fetchStates, discoveryErrors: [...this.discoveryErrors] };
+    this.state = Object.freeze({
+      workspace, attention, busy: this.busy, fetch: fetchStates, discoveryErrors: [...this.discoveryErrors], engineError: '',
+    });
     this.published = true;
     this.emit();
   }
 
   private emit(): void {
-    const s = this.current();
+    const s = this.state;
     for (const l of [...this.listeners]) {
       try {
         l(s);
