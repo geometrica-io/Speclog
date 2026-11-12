@@ -1,0 +1,12 @@
+{
+  "Open Speclog": "Open Speclog",
+  "Scanning repositories…": "Scanning repositories…",
+  "Speclog": "Speclog",
+  "Speclog needs git 2.24 or newer on the PATH.": "Speclog needs git 2.24 or newer on the PATH.",
+  "Speclog: git 2.24 or newer was not found ({0}).": "Speclog: git 2.24 or newer was not found ({0}).",
+  "Speclog: git not found": "Speclog: git not found",
+  "Speclog: scanning": "Speclog: scanning",
+  "Speclog: this command is not available yet.": "Speclog: this command is not available yet.",
+  "Speclog: {0} done of {1} in {2} repositories. Click to open.": "Speclog: {0} done of {1} in {2} repositories. Click to open.",
+  "Speclog: {0}/{1}": "Speclog: {0}/{1}"
+}

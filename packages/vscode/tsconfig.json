@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": { "@speclog/core": ["../core/src/index.ts"] },
+    "types": ["node", "vscode"]
+  },
+  "include": ["src", "test"]
+}
