@@ -5,6 +5,9 @@ import * as path from 'path';
 import { buildSnapshot, keepLastGood, RepoSnapshot } from '../src/snapshot';
 import type { Program, RepoInfo } from '../src/model';
 import { TestRepo, TestRemote } from './helpers/testRepo';
+import { resolveAll } from '../src/status';
+import { buildTree, defaultFilter } from '../src/viewTree';
+import { computeAttention } from '../src/attention';
 
 const T = 120000;
 const cleanups: Array<{ cleanup(): void }> = [];
@@ -374,8 +377,6 @@ describe('snapshot', () => {
     expect(s.mainCommits.length).toBe(2);
   }, T);
 
-  // The C++ case also runs ResolveAll / BuildTree / ComputeAttention, which later tasks port;
-  // here it checks the snapshot side: the raw build is partial, the shown one is error-only.
   it('a first build that fails shows only the git error', async () => {
     const r = await repo();
     await r.commit('first', { 'a.txt': 'a' });
@@ -391,6 +392,14 @@ describe('snapshot', () => {
     expect(shown.mainCommits).toEqual([]);
     expect(shown.branches).toEqual([]);
     expect(shown.hasTaskFiles).toBe(false);
+    // End to end: the tree shows the git error, the attention list has one gitError row.
+    const ws = resolveAll([shown], 'unverified');
+    const tree = buildTree(ws, 'program', defaultFilter());
+    expect(tree.children.length).toBe(1);
+    expect(tree.children[0].children.map((c) => [c.label, c.placeholder])).toEqual([['Git error', true]]);
+    const cfg = { today: today(), staleBranchDays: 7, recentDays: 30, fetchFailSeconds: 3600 };
+    const att = computeAttention(ws, cfg, [], 0);
+    expect(att.filter((a) => a.kind === 'gitError').length).toBe(1);
   }, T);
 
   // --- Speclog extras ---
