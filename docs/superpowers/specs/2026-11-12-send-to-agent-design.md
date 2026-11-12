@@ -1,6 +1,6 @@
 # Speclog v1.1 — Send to agent
 
-> **Status:** Draft (2026-11-12). Extends `2026-11-11-speclog-design.md` (the "main spec"); section
+> **Status:** Draft (2026-11-12), all questions answered; awaiting user review. Extends `2026-11-11-speclog-design.md` (the "main spec"); section
 > numbers like "main §4.4" refer to it. Target release: **v1.1**, after v1 ships. v1 scope and its
 > acceptance criteria do not change.
 
@@ -68,13 +68,14 @@ directly or through that file.
 
 **Repository not open in this window:** see §4.1.
 
-### 4.1 Repository not open in this window — OPEN QUESTION (user decision pending)
+### 4.1 Repository not open in this window (user decision, 2026-11-12)
 
 Repositories found through `speclog.roots` are often not workspace folders, and a chat agent works in
-the window's workspace, so `chat` may not reach the item's repository. Proposed (not yet approved):
-`auto` uses `chat` only when the repository is inside a workspace folder; otherwise Speclog copies the
-prompt and offers "Open repository in new window", leaving the user to paste it there. `terminal` is
-unaffected (its `cwd` is the repository).
+the window's workspace, so `chat` may not reach the item's repository. Therefore `chat` (whether chosen
+directly or by `auto`) is used only when the repository is inside a workspace folder of this window.
+Otherwise Speclog copies the prompt and shows a message with an **Open repository in new window**
+button (`vscode.openFolder` with `forceNewWindow`); the user pastes the prompt into the agent there.
+`terminal` is unaffected (its `cwd` is the repository).
 
 ## 5. The prompt
 
