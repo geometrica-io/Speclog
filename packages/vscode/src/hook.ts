@@ -1,0 +1,71 @@
+// Installs the Speclog commit-msg hook into a repository. Pure Node (no vscode import) so it is
+// unit-testable; the command layer shows the messages.
+import { execFile } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+
+export type InstallResult = 'installed' | 'already' | 'skipped-hooksPath' | 'chained';
+
+/** The hook's own marker line: how the installer recognises a hook it wrote. */
+const MARKER = 'Speclog commit-msg hook marker';
+
+/** The shipped hook script: dist/extension.js and src/hook.ts both sit next to assets/. */
+export function hookSourcePath(): string {
+  return path.join(__dirname, '..', 'assets', 'hook', 'commit-msg');
+}
+
+function git(repoPath: string, args: string[]): Promise<{ code: number; out: string }> {
+  return new Promise((resolve) => {
+    execFile('git', args, { cwd: repoPath, windowsHide: true, timeout: 30000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } },
+      (error, stdout) => {
+        const code = error ? (typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : -1) : 0;
+        resolve({ code, out: String(stdout).trim() });
+      });
+  });
+}
+
+/** The repository's core.hooksPath ("" when unset). */
+export async function hooksPathOf(repoPath: string): Promise<string> {
+  const r = await git(repoPath, ['config', '--get', 'core.hooksPath']);
+  return r.code === 0 ? r.out : '';
+}
+
+/**
+ * Installs the hook as <git hooks dir>/commit-msg. A foreign hook is kept as commit-msg.local (the
+ * hook runs it first); a 0-byte one is replaced; core.hooksPath set means nothing is touched.
+ */
+export async function installHook(repoPath: string): Promise<InstallResult> {
+  if (await hooksPathOf(repoPath)) return 'skipped-hooksPath';
+  const hp = await git(repoPath, ['rev-parse', '--git-path', 'hooks']);
+  if (hp.code !== 0 || !hp.out) throw new Error(`not a git repository: ${repoPath}`);
+  const hooks = path.resolve(repoPath, hp.out);
+  const target = path.join(hooks, 'commit-msg');
+  const local = path.join(hooks, 'commit-msg.local');
+  const wanted = fs.readFileSync(hookSourcePath());
+  fs.mkdirSync(hooks, { recursive: true });
+
+  let result: InstallResult = 'installed';
+  if (fs.existsSync(target)) {
+    const current = fs.readFileSync(target);
+    if (current.length === 0) {
+      // nothing to keep
+    } else if (current.includes(MARKER)) {
+      if (current.equals(wanted)) return 'already';
+      // an older Speclog hook: upgrade in place
+    } else {
+      if (fs.existsSync(local)) throw new Error(`commit-msg and commit-msg.local both exist in ${hooks}; not touching them`);
+      fs.renameSync(target, local);
+      result = 'chained';
+    }
+  }
+  fs.writeFileSync(target, wanted);
+  fs.chmodSync(target, 0o755);
+  return result;
+}
+
+/** The full commit hash a (full) ref points to, or "" when it does not resolve. */
+export async function resolveCommit(repoPath: string, ref: string): Promise<string> {
+  if (!ref) return '';
+  const r = await git(repoPath, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]);
+  return r.code === 0 && /^[0-9a-f]{40,64}$/.test(r.out) ? r.out : '';
+}

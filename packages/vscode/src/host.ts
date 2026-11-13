@@ -138,6 +138,15 @@ export class SpeclogHost implements vscode.Disposable {
     this.reconfigure();
   }
 
+  /** The scanned repositories (unique by key) with the full ref of their main-branch tip. */
+  repoInfos(): { key: string; name: string; path: string; tipRef: string }[] {
+    const seen = new Map<string, { key: string; name: string; path: string; tipRef: string }>();
+    for (const x of this.state?.workspace.snapshots ?? []) {
+      if (!seen.has(x.repo.key)) seen.set(x.repo.key, { key: x.repo.key, name: x.repo.name, path: x.repo.path, tipRef: x.main.tipRef });
+    }
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
+  }
+
   hiddenRepos(): string[] {
     return [...this.context.globalState.get<string[]>(HIDDEN_KEY, [])];
   }

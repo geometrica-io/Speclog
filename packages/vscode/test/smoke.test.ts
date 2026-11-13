@@ -1,6 +1,8 @@
 // Runs inside VS Code (see runTest.ts): the extension activates, speclog.open opens the panel,
 // and the status bar shows the counts of the two sample repositories.
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import type { SpeclogApi } from '../src/extension';
 
@@ -47,4 +49,22 @@ export async function run(): Promise<void> {
   assert.ok(nodes.every((c) => c.kind === 'branch'), 'repository nodes are branches');
   assert.ok(nodes[0].label.startsWith('alpha') && nodes[1].label.startsWith('beta'), nodes.map((c) => c.label).join(', '));
   console.log('ok - the panel receives the state; the tree has 2 repository nodes');
+
+  // Trust and hook commands with an explicit repository key (the Attention button path).
+  const state = api.lastPosted() as unknown as { repos: { key: string; name: string }[] };
+  const alpha = state.repos.find((r) => r.name.startsWith('alpha'));
+  assert.ok(alpha, 'alpha is in the repository list');
+  await vscode.commands.executeCommand('speclog.trustTaskFiles', alpha.key);
+  assert.match(api.trustCommits()[alpha.key] ?? '', /^[0-9a-f]{40,64}$/, 'trust stores the full main-tip hash');
+  console.log('ok - speclog.trustTaskFiles stores the main tip of the chosen repository');
+  await vscode.commands.executeCommand('speclog.untrustTaskFiles', alpha.key);
+  assert.strictEqual(api.trustCommits()[alpha.key], undefined, 'untrust removes it');
+  console.log('ok - speclog.untrustTaskFiles removes it');
+
+  const alphaDir = vscode.workspace.workspaceFolders!.map((f) => f.uri.fsPath).find((p) => path.basename(p).startsWith('alpha'))!;
+  await vscode.commands.executeCommand('speclog.installHook', alpha.key);
+  const hook = path.join(alphaDir, '.git', 'hooks', 'commit-msg');
+  await waitFor('the installed hook', () => fs.existsSync(hook));
+  assert.ok(fs.readFileSync(hook, 'utf8').includes('Speclog commit-msg hook'), 'hook content');
+  console.log('ok - speclog.installHook installs the hook');
 }

@@ -13,6 +13,8 @@ export interface SpeclogApi {
   lastPosted(): unknown;
   /** The webview script ran and sent "ready". */
   webviewReady(): boolean;
+  /** repoKey -> trusted commit (globalState). */
+  trustCommits(): Record<string, string>;
 }
 
 let host: SpeclogHost | undefined;
@@ -39,6 +41,7 @@ export function activate(context: vscode.ExtensionContext): SpeclogApi {
     isPanelOpen: () => h.panelOpen,
     lastPosted: () => h.lastPosted,
     webviewReady: () => h.webviewReady,
+    trustCommits: () => h.trustCommits(),
   };
 }
 
