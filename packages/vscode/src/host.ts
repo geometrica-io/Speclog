@@ -4,19 +4,21 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {
-  ALL_STATUSES, Engine, EngineState, Filter, TreeNode, applyPreset, buildTree, countByStatus, defaultFilter, findItem,
+  ALL_STATUSES, Engine, EngineState, Filter, TreeNode, applyPreset, buildTree, countByStatus, findItem,
   gitVersion, matches,
 } from '@speclog/core';
 import {
   attentionToDto, branchSummary, filterFromDto, filterToDto, findNode, findRepoNode, itemDetails, keyOfItem, pathToKey,
-  toTreeDto,
+  pruneOpenKeys, toTreeDto,
 } from './dto';
-import { resolveInRepo } from './files';
-import type { DetailsDto, HostToWebview, Status, ViewMode, WebviewToHost } from './protocol';
+import { clampLine, resolveInRepo } from './files';
+import { FILTER_PRESETS } from './protocol';
+import type { DetailsDto, FilterPreset, HostToWebview, Status, WebviewToHost } from './protocol';
 import { SECTION, readEngineConfig } from './settings';
 import { SpeclogStatusBar } from './statusBar';
 import { translateCoreLabel, webviewStrings } from './strings';
 import { summarize } from './summary';
+import { COALESCE_MS, MAX_KEYS, PersistedUi, isKey, isStr, isView, num, readUi } from './uiState';
 
 type StateMessage = Extract<HostToWebview, { type: 'state' }>;
 
@@ -25,56 +27,6 @@ const TRUST_KEY = 'speclog.trustCommits';
 const HIDDEN_KEY = 'speclog.hiddenRepos';
 /** workspaceState key of the panel's UI state. */
 const UI_KEY = 'speclog.ui';
-
-const VIEWS: readonly ViewMode[] = ['program', 'area', 'time'];
-const MAX_KEYS = 20000;
-
-/** Panel state remembered per workspace (the search text is not). */
-interface PersistedUi {
-  view: ViewMode;
-  statuses: Status[];
-  sizes: string[];
-  open: Record<ViewMode, string[]>;
-  selected: Record<ViewMode, string>;
-  attentionOpen: boolean;
-  attentionHeight: number;
-  treeFraction: number;
-}
-
-function defaultUi(): PersistedUi {
-  return {
-    view: 'program', statuses: filterToDto(defaultFilter()).statuses, sizes: [], open: { program: [], area: [], time: [] },
-    selected: { program: '', area: '', time: '' }, attentionOpen: false, attentionHeight: 180, treeFraction: 0.52,
-  };
-}
-
-const strList = (v: unknown, max = MAX_KEYS): string[] =>
-  (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, max) : []);
-const num = (v: unknown, fallback: number, min: number, max: number): number =>
-  (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback);
-const isView = (v: unknown): v is ViewMode => VIEWS.includes(v as ViewMode);
-const isStr = (v: unknown): v is string => typeof v === 'string';
-
-/** Validates stored UI state (it may come from an older version). */
-function readUi(raw: unknown): PersistedUi {
-  const d = defaultUi();
-  if (!raw || typeof raw !== 'object') return d;
-  const r = raw as Record<string, unknown>;
-  const per = <T>(v: unknown, f: (x: unknown) => T): Record<ViewMode, T> => {
-    const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
-    return { program: f(o.program), area: f(o.area), time: f(o.time) };
-  };
-  return {
-    view: isView(r.view) ? r.view : d.view,
-    statuses: Array.isArray(r.statuses) ? filterToDto(filterFromDto({ statuses: strList(r.statuses) as Status[] })).statuses : d.statuses,
-    sizes: strList(r.sizes, 50),
-    open: per(r.open, (x) => strList(x)),
-    selected: per(r.selected, (x) => (isStr(x) ? x : '')),
-    attentionOpen: r.attentionOpen === true,
-    attentionHeight: num(r.attentionHeight, d.attentionHeight, 40, 4000),
-    treeFraction: num(r.treeFraction, d.treeFraction, 0.1, 0.9),
-  };
-}
 
 function nonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -87,6 +39,10 @@ export class SpeclogHost implements vscode.Disposable {
   private engine: Engine | undefined;
   private state: EngineState | undefined;
   private panel: vscode.WebviewPanel | undefined;
+  private panelSubscriptions: vscode.Disposable[] = [];
+  /** The workspace the tree was last built from: a state with the same one only changes busy / fetch / Attention. */
+  private builtFrom: EngineState['workspace'] | undefined;
+  private pendingTimer: NodeJS.Timeout | undefined;
   private ready = false;
   private everReady = false;
   private last: StateMessage | undefined;
@@ -149,13 +105,16 @@ export class SpeclogHost implements vscode.Disposable {
     });
     panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'speclog.svg');
     this.ready = false;
-    panel.onDidDispose(() => {
-      this.panel = undefined;
-      this.ready = false;
-    });
-    panel.webview.onDidReceiveMessage((m: unknown) => { void this.onMessage(m); });
-    // A hidden webview is discarded; it sends "ready" again when shown.
-    panel.onDidChangeViewState((e) => { if (!e.webviewPanel.visible) this.ready = false; });
+    this.panelSubscriptions = [
+      panel.onDidDispose(() => {
+        this.panel = undefined;
+        this.ready = false;
+        for (const d of this.panelSubscriptions.splice(0)) d.dispose();
+      }),
+      panel.webview.onDidReceiveMessage((m: unknown) => { void this.onMessage(m); }),
+      // A hidden webview is discarded; it sends "ready" again when shown.
+      panel.onDidChangeViewState((e) => { if (!e.webviewPanel.visible) this.ready = false; }),
+    ];
     this.panel = panel;
     panel.webview.html = this.html(panel.webview, dist);
   }
@@ -212,9 +171,30 @@ export class SpeclogHost implements vscode.Disposable {
     if (this.disposed) return;
     this.state = s;
     this.statusBar.update(summarize(s));
+    if (!this.pendingTimer) this.pendingTimer = setTimeout(() => this.flushState(), COALESCE_MS);
+  }
+
+  /** Posts the newest engine state: the whole tree when the workspace changed, else a light status. */
+  private flushState(): void {
+    this.pendingTimer = undefined;
+    const s = this.state;
+    if (!s || this.disposed) return;
+    if (s.workspace === this.builtFrom && this.last) {
+      const attention = attentionToDto(s.attention, s.workspace);
+      const fetch = this.fetchDto(s);
+      this.last = { ...this.last, busy: s.busy, fetch, attention };
+      this.send({ type: 'status', busy: s.busy, fetch, attention });
+      return;
+    }
     this.rebuild();
     this.postState(false);
     this.postDetails();
+  }
+
+  private fetchDto(s: EngineState): StateMessage['fetch'] {
+    const nameOf = new Map(s.workspace.snapshots.map((x) => [x.repo.path, x.repo.name]));
+    return s.fetch.map((x) => ({ repo: nameOf.get(x.repo) ?? x.repo, lastOkUnix: x.lastOkUnix, firstFailUnix: x.firstFailUnix,
+      lastError: x.lastError }));
   }
 
   // ------------------------------------------------------------------------------------------ model
@@ -225,6 +205,7 @@ export class SpeclogHost implements vscode.Disposable {
 
   private rebuild(): void {
     this.fullTree = undefined;
+    this.builtFrom = this.state?.workspace;
     this.tree = this.state ? buildTree(this.state.workspace, this.ui.view, this.filter()) : undefined;
   }
 
@@ -244,7 +225,6 @@ export class SpeclogHost implements vscode.Disposable {
     const sum = summarize(s);
     const repos = new Map<string, string>();
     for (const snap of ws.snapshots) if (!repos.has(snap.repo.key)) repos.set(snap.repo.key, snap.repo.name);
-    const nameOf = new Map(ws.snapshots.map((x) => [x.repo.path, x.repo.name]));
     return {
       type: 'state',
       view: this.ui.view,
@@ -254,8 +234,7 @@ export class SpeclogHost implements vscode.Disposable {
         shown: ws.items.filter((r) => matches(r, f)).length },
       attention: attentionToDto(s.attention, ws),
       busy: s.busy,
-      fetch: s.fetch.map((x) => ({ repo: nameOf.get(x.repo) ?? x.repo, lastOkUnix: x.lastOkUnix, firstFailUnix: x.firstFailUnix,
-        lastError: x.lastError })),
+      fetch: this.fetchDto(s),
       filter: filterToDto(f),
       ui: {
         openKeys: [...this.ui.open[this.ui.view]], selectedKey: this.ui.selected[this.ui.view],
@@ -306,6 +285,14 @@ export class SpeclogHost implements vscode.Disposable {
     void this.context.workspaceState.update(UI_KEY, this.ui);
   }
 
+  /** Stores open keys, dropping ones that are no longer branches (only once a scan has settled). */
+  private setOpenKeys(keys: Iterable<string>): void {
+    let open = [...keys];
+    const full = this.state && !this.state.busy && this.state.workspace.snapshots.length > 0 ? this.full() : undefined;
+    if (full) open = pruneOpenKeys(open, full);
+    this.ui.open[this.ui.view] = open.slice(0, MAX_KEYS);
+  }
+
   // ------------------------------------------------------------------------------------------ messages
 
   /** Messages from the webview are validated: the page is local, but its input is still input. */
@@ -343,18 +330,28 @@ export class SpeclogHost implements vscode.Disposable {
         this.postState(false);
         break;
       }
+      case 'preset': {
+        if (!FILTER_PRESETS.includes(m.preset)) return;
+        const f = applyPreset(m.preset as FilterPreset);
+        this.ui.statuses = filterToDto(f).statuses;
+        this.ui.sizes = [];
+        this.saveUi();
+        this.rebuild();
+        this.postState(false);
+        break;
+      }
       case 'select':
-        if (!isStr(m.key)) return;
+        if (!isKey(m.key)) return;
         this.ui.selected[this.ui.view] = m.key;
         this.saveUi();
         this.postDetails();
         break;
       case 'toggle': {
-        if (!isStr(m.key)) return;
+        if (!isKey(m.key)) return;
         const open = new Set(this.ui.open[this.ui.view]);
         if (m.open === true) open.add(m.key);
         else open.delete(m.key);
-        this.ui.open[this.ui.view] = [...open].slice(0, MAX_KEYS);
+        this.setOpenKeys(open);
         this.saveUi();
         break;
       }
@@ -366,7 +363,7 @@ export class SpeclogHost implements vscode.Disposable {
         break;
       case 'openFile':
         if (isStr(m.repoKey) && isStr(m.path)) {
-          await this.openFile(m.repoKey, m.path, typeof m.line === 'number' && Number.isFinite(m.line) ? m.line : undefined);
+          await this.openFile(m.repoKey, m.path, clampLine(m.line));
         }
         break;
       case 'copy':
@@ -375,12 +372,14 @@ export class SpeclogHost implements vscode.Disposable {
         vscode.window.setStatusBarMessage(vscode.l10n.t('Copied {0}', m.text.slice(0, 12)), 2000);
         break;
       case 'jump':
-        if (isStr(m.repo) && isStr(m.id)) this.jump(m.repo, m.id);
+        if (isKey(m.repo) && isKey(m.id)) this.jump(m.repo, m.id);
         break;
       case 'command':
         if (m.id === 'refresh') this.refresh();
         else if (m.id === 'trustTaskFiles') {
-          await vscode.commands.executeCommand('speclog.trustTaskFiles', isStr(m.repoKey) ? m.repoKey : undefined);
+          // Only a key of a scanned repository; anything else runs the command without one.
+          const known = isStr(m.repoKey) && (this.state?.workspace.snapshots ?? []).some((x) => x.repo.key === m.repoKey);
+          await vscode.commands.executeCommand('speclog.trustTaskFiles', known ? m.repoKey : undefined);
         } else if (m.id === 'installHook') await vscode.commands.executeCommand('speclog.installHook');
         break;
     }
@@ -419,7 +418,7 @@ export class SpeclogHost implements vscode.Disposable {
     const path = this.tree ? pathToKey(this.tree, key) : [];
     const open = new Set(this.ui.open[this.ui.view]);
     for (const k of path.slice(0, -1)) open.add(k);
-    this.ui.open[this.ui.view] = [...open].slice(0, MAX_KEYS);
+    this.setOpenKeys(open);
     this.saveUi();
     this.postState(true);
     this.postDetails();
@@ -438,7 +437,7 @@ export class SpeclogHost implements vscode.Disposable {
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(full));
       const options: vscode.TextDocumentShowOptions = { preview: true };
       if (line !== undefined && line > 0) {
-        const pos = new vscode.Position(Math.min(Math.floor(line) - 1, Math.max(0, doc.lineCount - 1)), 0);
+        const pos = new vscode.Position(Math.min(line - 1, Math.max(0, doc.lineCount - 1)), 0);
         options.selection = new vscode.Range(pos, pos);
       }
       await vscode.window.showTextDocument(doc, options);
@@ -472,6 +471,8 @@ export class SpeclogHost implements vscode.Disposable {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    clearTimeout(this.pendingTimer);
+    this.pendingTimer = undefined;
     for (const d of this.subscriptions.splice(0)) d.dispose();
     this.panel?.dispose();
     const engine = this.engine;

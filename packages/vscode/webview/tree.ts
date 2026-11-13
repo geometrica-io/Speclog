@@ -1,10 +1,12 @@
 // The task tree with virtual scrolling: only the rows in view (plus a margin) exist in the DOM.
+// Row elements are recycled by slot and their content is rebuilt only when it changed, so a click
+// that coincides with a state message or a scroll frame still lands on a live element.
 // Keyboard: Up/Down move, Right opens / goes to the first child, Left closes / goes to the parent,
 // Home/End/PageUp/PageDown, Enter or Space selects (focus alone never selects).
 import type { Strings, TreeNodeDto, ViewMode } from '../src/protocol';
-import { clear, h } from './dom';
-import { TreeRow, rowsForTree, statusClass, statusLabel } from './viewModel';
 import { STATUS_ORDER } from '../src/protocol';
+import { h } from './dom';
+import { TreeRow, rowsForTree, statusClass, statusLabel } from './viewModel';
 
 const OVERSCAN = 12;
 const INDENT_PX = 16;
@@ -14,10 +16,14 @@ export interface TreeCallbacks {
   toggle(key: string, open: boolean): void;
 }
 
+/** A recycled row element and the content it currently shows. */
+interface Slot { el: HTMLDivElement; sig: string; }
+
 export class TreeView {
   readonly element: HTMLDivElement;
   private readonly spacer: HTMLDivElement;
   private readonly message: HTMLDivElement;
+  private readonly slots: Slot[] = [];
   private tree: TreeNodeDto | null = null;
   private rows: TreeRow[] = [];
   private open = new Set<string>();
@@ -27,25 +33,42 @@ export class TreeView {
   private S: Strings | null = null;
   private rowH = 22;
   private frame = 0;
+  /** Focus came from a pointer press: the press sets the focus row, the focus handler does nothing. */
+  private pointerFocus = false;
 
   constructor(private readonly cb: TreeCallbacks) {
     this.spacer = h('div', { class: 'tree-spacer', attrs: { role: 'presentation' } });
     this.message = h('div', { class: 'tree-message muted' });
     this.element = h('div', { class: 'tree', attrs: { role: 'tree', tabindex: '0' } }, this.message, this.spacer);
     this.element.addEventListener('scroll', () => this.schedule());
+    this.element.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     this.element.addEventListener('click', (e) => this.onClick(e));
     this.element.addEventListener('dblclick', (e) => this.onDoubleClick(e));
     this.element.addEventListener('keydown', (e) => this.onKey(e));
     this.element.addEventListener('focus', () => {
-      if (!this.focusKey && this.rows.length > 0) this.setFocus(this.indexOf(this.selected) >= 0 ? this.indexOf(this.selected) : 0);
+      if (this.pointerFocus) {
+        this.pointerFocus = false;
+        return;
+      }
+      if (!this.focusKey && this.rows.length > 0) this.setFocus(Math.max(0, this.indexOf(this.selected)));
+      else this.render();
     });
+    this.element.addEventListener('blur', () => this.render());
     new ResizeObserver(() => { this.measure(); this.schedule(); }).observe(this.element);
   }
 
   setStrings(S: Strings): void {
     this.S = S;
     this.element.setAttribute('aria-label', S['tree.label']);
+    this.themeChanged();
+  }
+
+  /** Font or theme changed: row height and pill width are measured again. */
+  themeChanged(): void {
+    this.measure();
     this.measurePills();
+    for (const s of this.slots) s.sig = '';
+    this.render();
   }
 
   /** New data from the host; reveal scrolls the selected row into view. */
@@ -64,11 +87,6 @@ export class TreeView {
         this.scrollToRow(i, true);
       }
     }
-    this.render();
-  }
-
-  setSelected(key: string): void {
-    this.selected = key;
     this.render();
   }
 
@@ -116,35 +134,53 @@ export class TreeView {
   }
 
   private render(): void {
-    clear(this.spacer);
-    if (!this.S || this.rows.length === 0) {
-      this.element.removeAttribute('aria-activedescendant');
-      return;
-    }
+    const n = this.S ? this.rows.length : 0;
     const top = this.element.scrollTop;
     const height = this.element.clientHeight || 600;
     const first = Math.max(0, Math.floor(top / this.rowH) - OVERSCAN);
-    const last = Math.min(this.rows.length, Math.ceil((top + height) / this.rowH) + OVERSCAN);
-    for (let i = first; i < last; i++) this.spacer.append(this.rowElement(i));
+    const last = Math.min(n, Math.ceil((top + height) / this.rowH) + OVERSCAN);
+    const count = Math.max(0, last - first);
+    while (this.slots.length < count) {
+      const el = h('div', { class: 'row', attrs: { role: 'treeitem' } });
+      this.spacer.append(el);
+      this.slots.push({ el, sig: '' });
+    }
+    for (let k = 0; k < this.slots.length; k++) {
+      const slot = this.slots[k];
+      slot.el.hidden = k >= count;
+      if (k < count) this.fill(slot, first + k);
+    }
     const fi = this.indexOf(this.focusKey);
     if (fi >= first && fi < last) this.element.setAttribute('aria-activedescendant', `row-${fi}`);
     else this.element.removeAttribute('aria-activedescendant');
   }
 
-  private rowElement(i: number): HTMLDivElement {
+  /** The key a row selects: a placeholder stands for its repository. */
+  private selectKeyOf(n: TreeNodeDto): string {
+    return n.kind === 'placeholder' ? n.selectKey ?? '' : n.key;
+  }
+
+  private fill(slot: Slot, i: number): void {
     const r = this.rows[i];
     const n = r.node;
-    const S = this.S!;
-    const selectKey = n.kind === 'placeholder' ? n.selectKey ?? '' : n.key;
-    const classes = ['row'];
-    if (selectKey === this.selected && this.selected !== '') classes.push('selected');
-    if (r.key === this.focusKey) classes.push('focused');
-    const el = h('div', { class: classes.join(' '), attrs: {
-      'role': 'treeitem', 'id': `row-${i}`, 'data-index': String(i), 'aria-level': String(r.depth + 1),
-      'aria-selected': String(selectKey === this.selected),
-    } });
+    const el = slot.el;
+    // Only the row itself shows the selection; a placeholder never does (its repository row does).
+    const selected = n.kind !== 'placeholder' && n.key === this.selected && this.selected !== '';
+    el.classList.toggle('selected', selected);
+    el.classList.toggle('focused', r.key === this.focusKey && document.activeElement === this.element);
+    el.id = `row-${i}`;
+    el.dataset.key = r.key;
+    el.setAttribute('aria-level', String(r.depth + 1));
+    el.setAttribute('aria-selected', String(selected));
     if (r.expandable) el.setAttribute('aria-expanded', String(r.open));
+    else el.removeAttribute('aria-expanded');
     el.style.top = `${i * this.rowH}px`;
+    const sig = JSON.stringify([n.key, n.label, n.kind, n.done, n.total, n.id, n.status, n.repo, r.depth, r.expandable, r.open, this.view]);
+    if (sig === slot.sig) return;
+    slot.sig = sig;
+    const S = this.S!;
+    el.replaceChildren();
+    el.removeAttribute('title');
     el.style.paddingLeft = `${4 + r.depth * INDENT_PX}px`;
     el.append(h('span', { class: `twisty${r.expandable ? (r.open ? ' open' : ' closed') : ''}`, attrs: { 'aria-hidden': 'true' } }));
     if (n.kind === 'item') {
@@ -159,17 +195,24 @@ export class TreeView {
       el.append(h('span', { class: 'label', text: n.label }), h('span', { class: 'count', text: `${n.done} / ${n.total}` }));
       el.title = n.label;
     }
-    return el;
   }
 
+  /** Row index of an event's row, looked up by key (rows may have changed since the press). */
   private rowIndexOf(e: Event): number {
-    const row = (e.target as HTMLElement).closest('.row');
-    return row ? Number(row.getAttribute('data-index')) : -1;
+    const row = (e.target as HTMLElement).closest('.row') as HTMLElement | null;
+    return row?.dataset.key ? this.indexOf(row.dataset.key) : -1;
+  }
+
+  private onPointerDown(e: PointerEvent): void {
+    if (document.activeElement !== this.element) this.pointerFocus = true;
+    const i = this.rowIndexOf(e);
+    if (i >= 0) this.focusKey = this.rows[i].key;
   }
 
   private onClick(e: MouseEvent): void {
+    this.pointerFocus = false;
     const i = this.rowIndexOf(e);
-    if (i < 0 || i >= this.rows.length) return;
+    if (i < 0) return;
     const r = this.rows[i];
     this.focusKey = r.key;
     if ((e.target as HTMLElement).classList.contains('twisty') && r.expandable) {
@@ -187,8 +230,7 @@ export class TreeView {
   }
 
   private select(i: number): void {
-    const n = this.rows[i].node;
-    const key = n.kind === 'placeholder' ? n.selectKey ?? '' : n.key;
+    const key = this.selectKeyOf(this.rows[i].node);
     if (key === '') return;
     this.selected = key;
     this.render();

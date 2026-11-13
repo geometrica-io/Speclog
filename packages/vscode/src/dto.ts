@@ -154,3 +154,18 @@ export function filterFromDto(d: Partial<FilterDto> | undefined): Filter {
     search: typeof d?.search === 'string' ? d.search.slice(0, 500) : '',
   };
 }
+
+/** Open keys that are still branches of the tree (in their order); leaves and vanished keys go. */
+export function pruneOpenKeys(keys: readonly string[], root: TreeNode): string[] {
+  const branches = new Set<string>();
+  const walk = (n: TreeNode): void => {
+    for (const c of n.children) {
+      if (!c.item && !c.placeholder) {
+        branches.add(c.key);
+        walk(c);
+      }
+    }
+  };
+  walk(root);
+  return keys.filter((k) => branches.has(k));
+}

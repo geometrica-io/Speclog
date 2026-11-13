@@ -1,7 +1,7 @@
 // openFile: only paths that stay inside the repository are opened.
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
-import { resolveInRepo } from '../src/files';
+import { clampLine, resolveInRepo } from '../src/files';
 
 const root = path.resolve('/work/repo');
 
@@ -33,5 +33,17 @@ describe('resolveInRepo', () => {
 
   it('does not treat a sibling folder sharing the prefix as inside', () => {
     expect(resolveInRepo(root, '../repo2/a.md')).toBeUndefined();
+  });
+});
+
+describe('clampLine', () => {
+  it('gives a non-negative integer or undefined', () => {
+    expect(clampLine(7)).toBe(7);
+    expect(clampLine(3.9)).toBe(3);
+    expect(clampLine(-2)).toBe(0);
+    expect(clampLine(Number.NaN)).toBeUndefined();
+    expect(clampLine(Infinity)).toBeUndefined();
+    expect(clampLine('4')).toBeUndefined();
+    expect(clampLine(undefined)).toBeUndefined();
   });
 });

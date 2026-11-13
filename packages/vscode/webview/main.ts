@@ -6,6 +6,7 @@ import { h, post } from './dom';
 import { PropertiesView } from './properties';
 import { TopBar } from './topBar';
 import { TreeView } from './tree';
+import { mergeOpenKeys } from './viewModel';
 
 type StateMessage = Extract<HostToWebview, { type: 'state' }>;
 
@@ -19,6 +20,8 @@ let attentionHeight = 180;
 let treeFraction = 0.52;
 let selectedKey = '';
 let openKeys: string[] = [];
+/** Local toggles the host has not confirmed in a state yet. */
+let pendingToggles = new Map<string, boolean>();
 
 const tree = new TreeView({
   select(key) {
@@ -27,6 +30,7 @@ const tree = new TreeView({
   },
   toggle(key, open) {
     openKeys = open ? [...openKeys, key] : openKeys.filter((k) => k !== key);
+    pendingToggles.set(key, open);
     post({ type: 'toggle', key, open });
   },
 });
@@ -35,6 +39,7 @@ const attention = new AttentionView();
 const topBar = new TopBar({
   setView: (view) => post({ type: 'setView', view }),
   setFilter: (filter) => post({ type: 'setFilter', filter }),
+  preset: (preset) => post({ type: 'preset', preset }),
   toggleAttention: () => {
     attentionOpen = !attentionOpen;
     applyLayout();
@@ -123,12 +128,15 @@ function renderTopBar(): void {
 }
 
 function renderState(m: StateMessage): void {
+  if (state && state.view !== m.view) pendingToggles = new Map();
   state = m;
   attentionOpen = m.ui.attentionOpen;
   attentionHeight = m.ui.attentionHeight;
   treeFraction = m.ui.treeFraction;
   selectedKey = m.ui.selectedKey;
-  openKeys = m.ui.openKeys;
+  const merged = mergeOpenKeys(m.ui.openKeys, pendingToggles);
+  openKeys = merged.open;
+  pendingToggles = merged.pending;
   applyLayout();
   renderTopBar();
   let empty = '';
@@ -156,11 +164,22 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
     case 'state':
       renderState(m);
       break;
+    case 'status':
+      if (!state) break;
+      state = { ...state, busy: m.busy, fetch: m.fetch, attention: m.attention };
+      renderTopBar();
+      attention.setItems(m.attention);
+      break;
     case 'details':
       if (m.key === selectedKey || m.key === '') props.setDetails(m.details);
       break;
   }
 });
+
+// VS Code rewrites the theme variables (html style) and body classes on a theme or font change.
+const themeObserver = new MutationObserver(() => tree.themeChanged());
+themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
+themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
 applyLayout();
 post({ type: 'ready' });

@@ -18,3 +18,8 @@ export function resolveInRepo(repoRoot: string, rel: string): string | undefined
   if (inside === '' || inside === '..' || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)) return undefined;
   return full;
 }
+
+/** A 1-based line from the webview as a non-negative integer; undefined when it is not a finite number. */
+export function clampLine(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : undefined;
+}

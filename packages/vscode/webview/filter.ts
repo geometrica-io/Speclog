@@ -1,23 +1,11 @@
 // The Filter dropdown: presets, status checkboxes with counts, hidden repositories, sizes.
 import type { FilterDto, FilterPreset, RepoDto, Status, Strings } from '../src/protocol';
 import { STATUS_ORDER } from '../src/protocol';
-import { clear, h } from './dom';
+import { clear, focusedId, h, refocus } from './dom';
 import { statusClass, statusLabel, toggleInSet } from './viewModel';
 
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', ''];
 const NON_DROPPED: readonly Status[] = STATUS_ORDER.filter((s) => s !== 'dropped');
-
-export function presetFilter(p: FilterPreset, search: string): FilterDto {
-  let statuses: Status[];
-  switch (p) {
-    case 'all': statuses = [...STATUS_ORDER]; break;
-    case 'open': statuses = NON_DROPPED.filter((s) => s !== 'done'); break;
-    case 'done': statuses = ['done']; break;
-    case 'onBranch': statuses = ['onBranch']; break;
-    default: statuses = ['bug']; break;
-  }
-  return { statuses, hiddenRepos: [], sizes: [], search };
-}
 
 /** Anything beyond the default (all but dropped, every repository and size, no search). */
 export function filterActive(f: FilterDto): boolean {
@@ -33,7 +21,8 @@ export class FilterPopup {
   private counts: Record<Status, number> | null = null;
   private repos: RepoDto[] = [];
 
-  constructor(private readonly onChange: (f: FilterDto) => void) {
+  /** onPreset: the host applies the preset (hidden repositories and the search are kept). */
+  constructor(private readonly onChange: (f: FilterDto) => void, private readonly onPreset: (p: FilterPreset) => void) {
     this.element = h('div', { class: 'filter-popup', attrs: { role: 'dialog' } });
     this.element.hidden = true;
     this.element.addEventListener('keydown', (e) => {
@@ -91,8 +80,7 @@ export class FilterPopup {
   private render(): void {
     const S = this.S;
     if (!S) return;
-    const active = this.element.ownerDocument.activeElement;
-    const focusId = active instanceof HTMLElement && this.element.contains(active) ? active.dataset.fid : undefined;
+    const focusId = focusedId(this.element);
     clear(this.element);
     const f = this.filter;
 
@@ -102,7 +90,7 @@ export class FilterPopup {
       ['onBranch', S['preset.onBranch']], ['bugs', S['preset.bugs']]];
     for (const [p, text] of names) {
       const b = h('button', { class: 'button', text, attrs: { 'type': 'button', 'data-fid': `p-${p}` } });
-      b.addEventListener('click', () => this.change(presetFilter(p, f.search)));
+      b.addEventListener('click', () => this.onPreset(p));
       presets.append(b);
     }
     this.element.append(presets);
@@ -146,6 +134,6 @@ export class FilterPopup {
     }
     this.element.append(sizes);
 
-    if (focusId) (this.element.querySelector(`[data-fid="${CSS.escape(focusId)}"]`) as HTMLElement | null)?.focus();
+    refocus(this.element, focusId);
   }
 }

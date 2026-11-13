@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AttentionItemDto, BranchSummaryDto, ItemDetailsDto, STRING_KEYS, Strings, TreeNodeDto,
 } from '../src/protocol';
-import { attentionGroups, fmt, formatDetails, rowsForTree, statusClass, toggleInSet } from '../webview/viewModel';
+import { attentionGroups, fmt, formatDetails, mergeOpenKeys, rowsForTree, statusClass, toggleInSet } from '../webview/viewModel';
 
 /** Each string is its key, so tests read which text was chosen. */
 const S = Object.fromEntries(STRING_KEYS.map((k) => [k, k])) as Strings;
@@ -187,5 +187,20 @@ describe('small helpers', () => {
     expect(toggleInSet([], all, 'S', false)).toEqual(['XS', '']);
     expect(toggleInSet(['XS', ''], all, 'S', true)).toEqual([]);
     expect(toggleInSet(['S'], all, 'S', false)).toEqual(['S']);
+  });
+});
+
+describe('mergeOpenKeys', () => {
+  it('keeps local toggles the state has not confirmed yet', () => {
+    const pending = new Map([['A', true], ['B', false]]);
+    const r = mergeOpenKeys(['B', 'C'], pending);
+    expect(new Set(r.open)).toEqual(new Set(['A', 'C']));
+    expect([...r.pending]).toEqual([['A', true], ['B', false]]);
+  });
+
+  it('drops toggles the state confirms', () => {
+    const r = mergeOpenKeys(['A', 'C'], new Map([['A', true], ['B', false]]));
+    expect(new Set(r.open)).toEqual(new Set(['A', 'C']));
+    expect(r.pending.size).toBe(0);
   });
 });

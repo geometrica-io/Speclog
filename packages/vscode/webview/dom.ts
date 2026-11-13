@@ -31,3 +31,14 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props = 
 export function clear(el: Element): void {
   while (el.firstChild) el.removeChild(el.firstChild);
 }
+
+/** The data-fid of the focused element inside container, to restore after a re-render. */
+export function focusedId(container: Element): string | undefined {
+  const a = document.activeElement;
+  return a instanceof HTMLElement && container.contains(a) ? a.dataset.fid : undefined;
+}
+
+export function refocus(container: Element, id: string | undefined): void {
+  if (id === undefined) return;
+  (container.querySelector(`[data-fid="${CSS.escape(id)}"]`) as HTMLElement | null)?.focus();
+}

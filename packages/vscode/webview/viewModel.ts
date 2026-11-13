@@ -266,3 +266,22 @@ export function toggleInSet(set: readonly string[], all: readonly string[], v: s
   if (all.every((a) => next.has(a))) return [];
   return all.filter((a) => next.has(a));
 }
+
+// ---------------------------------------------------------------------------------------------- open keys
+
+/**
+ * Open keys from a state message merged with local toggles the host has not confirmed yet (a state
+ * posted before the host saw the toggle). Confirmed toggles leave pending.
+ */
+export function mergeOpenKeys(stateKeys: readonly string[], pending: ReadonlyMap<string, boolean>):
+  { open: string[]; pending: Map<string, boolean> } {
+  const open = new Set(stateKeys);
+  const left = new Map<string, boolean>();
+  for (const [key, isOpen] of pending) {
+    if (open.has(key) === isOpen) continue;
+    left.set(key, isOpen);
+    if (isOpen) open.add(key);
+    else open.delete(key);
+  }
+  return { open: [...open], pending: left };
+}

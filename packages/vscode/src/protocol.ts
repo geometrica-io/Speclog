@@ -19,6 +19,10 @@ export type AttentionKind = 'staleBranch' | 'untaggedCommit' | 'evidenceConflict
   'fileDoneNoGit' | 'gitDoneFileOpen' | 'unverifiedSummary' | 'uncommittedTaskChanges' | 'ambiguousRepoRef';
 
 export type FilterPreset = 'all' | 'open' | 'done' | 'onBranch' | 'bugs';
+export const FILTER_PRESETS: readonly FilterPreset[] = ['all', 'open', 'done', 'onBranch', 'bugs'];
+
+/** Longest key the host accepts from the webview. */
+export const MAX_KEY_LENGTH = 4096;
 
 /** One tree row's data; keys are opaque (never parsed on either side). */
 export interface TreeNodeDto {
@@ -160,12 +164,16 @@ export type HostToWebview =
     type: 'state'; view: ViewMode; tree: TreeNodeDto; counts: Record<Status, number>; summary: SummaryDto;
     attention: AttentionItemDto[]; busy: boolean; fetch: FetchStateDto[]; filter: FilterDto; ui: UiStateDto; repos: RepoDto[];
   }
+  /** Only busy / fetch / Attention changed (same workspace): the tree is not resent. */
+  | { type: 'status'; busy: boolean; fetch: FetchStateDto[]; attention: AttentionItemDto[] }
   | { type: 'details'; key: string; details: DetailsDto | null };
 
 export type WebviewToHost =
   | { type: 'ready' }
   | { type: 'setView'; view: ViewMode }
   | { type: 'setFilter'; filter: FilterDto }
+  /** Statuses and sizes from the preset; hidden repositories and the search are kept. */
+  | { type: 'preset'; preset: FilterPreset }
   | { type: 'select'; key: string }
   | { type: 'toggle'; key: string; open: boolean }
   | { type: 'openFile'; repoKey: string; path: string; line?: number }

@@ -1,5 +1,5 @@
 // Top bar: View combobox, search, Filter button (+ dropdown), summary, busy / fetch state, Attention button.
-import type { FetchStateDto, FilterDto, Status, Strings, ViewMode } from '../src/protocol';
+import type { FetchStateDto, FilterDto, FilterPreset, Status, Strings, ViewMode } from '../src/protocol';
 import type { RepoDto, SummaryDto } from '../src/protocol';
 import { h } from './dom';
 import { FilterPopup, filterActive } from './filter';
@@ -10,6 +10,7 @@ const SEARCH_DELAY_MS = 200;
 export interface TopBarCallbacks {
   setView(v: ViewMode): void;
   setFilter(f: FilterDto): void;
+  preset(p: FilterPreset): void;
   toggleAttention(): void;
 }
 
@@ -57,7 +58,7 @@ export class TopBar {
       this.filter = { ...f, search: this.search.value };
       this.updateFilterButton();
       cb.setFilter(this.filter);
-    });
+    }, (p) => cb.preset(p));
     this.popup.onClose = (focus) => {
       this.filterButton.setAttribute('aria-expanded', 'false');
       if (focus) this.filterButton.focus();

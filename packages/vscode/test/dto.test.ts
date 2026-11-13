@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { RepoInfo, Workspace, applyPreset, buildSnapshot, buildTree, defaultFilter, resolveAll } from '@speclog/core';
 import { TestRepo } from '../../core/test/helpers/testRepo';
 import {
-  branchSummary, filterFromDto, filterToDto, findNode, findRepoNode, itemDetails, keyOfItem, pathToKey, toTreeDto,
+  branchSummary, filterFromDto, filterToDto, findNode, findRepoNode, itemDetails, keyOfItem, pathToKey, pruneOpenKeys, toTreeDto,
 } from '../src/dto';
 
 const T = 60000;
@@ -72,6 +72,15 @@ describe('dto', () => {
     expect(s.byStatus).toEqual([{ status: 'done', count: 1 }, { status: 'bug', count: 1 }]);
     expect(s.oldest).toMatchObject({ id: 'A2', status: 'bug' });
     expect(branchSummary(full.children[1], tr).note).toBe('<No task files>');
+  }, T);
+
+  it('prunes open keys to the branches of the tree', async () => {
+    const ws = await workspace();
+    const tree = buildTree(ws, 'program', applyPreset('all'));
+    const repoKey = tree.children[0].key;
+    const progKey = tree.children[0].children[0].key;
+    const leafKey = tree.children[0].children[0].children[0].key;
+    expect(pruneOpenKeys([repoKey, 'gone', progKey, leafKey], tree)).toEqual([repoKey, progKey]);
   }, T);
 
   it('round-trips the filter', () => {
