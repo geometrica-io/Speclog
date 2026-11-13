@@ -4,6 +4,11 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
+/** Thrown by installHook; the command maps the code to a translated message. */
+export class HookError extends Error {
+  constructor(public readonly code: 'bothHooksExist' | 'notARepo', message: string) { super(message); }
+}
+
 export type InstallResult = 'installed' | 'already' | 'skipped-hooksPath' | 'chained';
 
 /** The hook's own marker line: how the installer recognises a hook it wrote. */
@@ -37,7 +42,7 @@ export async function hooksPathOf(repoPath: string): Promise<string> {
 export async function installHook(repoPath: string): Promise<InstallResult> {
   if (await hooksPathOf(repoPath)) return 'skipped-hooksPath';
   const hp = await git(repoPath, ['rev-parse', '--git-path', 'hooks']);
-  if (hp.code !== 0 || !hp.out) throw new Error(`not a git repository: ${repoPath}`);
+  if (hp.code !== 0 || !hp.out) throw new HookError('notARepo', `not a git repository: ${repoPath}`);
   const hooks = path.resolve(repoPath, hp.out);
   const target = path.join(hooks, 'commit-msg');
   const local = path.join(hooks, 'commit-msg.local');
@@ -53,7 +58,7 @@ export async function installHook(repoPath: string): Promise<InstallResult> {
       if (current.equals(wanted)) return 'already';
       // an older Speclog hook: upgrade in place
     } else {
-      if (fs.existsSync(local)) throw new Error(`commit-msg and commit-msg.local both exist in ${hooks}; not touching them`);
+      if (fs.existsSync(local)) throw new HookError('bothHooksExist', `commit-msg and commit-msg.local both exist in ${hooks}; not touching them`);
       fs.renameSync(target, local);
       result = 'chained';
     }

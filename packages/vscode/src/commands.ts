@@ -1,6 +1,6 @@
 // Command registrations: open / refresh, the commit-msg hook installer and the per-repository trust cutoff.
 import * as vscode from 'vscode';
-import { hooksPathOf, installHook, resolveCommit } from './hook';
+import { HookError, hooksPathOf, installHook, resolveCommit } from './hook';
 import type { SpeclogHost } from './host';
 
 type RepoInfo = ReturnType<SpeclogHost['repoInfos']>[number];
@@ -43,7 +43,10 @@ async function installHookCommand(host: SpeclogHost, key: unknown): Promise<void
         break;
     }
   } catch (e) {
-    void vscode.window.showErrorMessage(vscode.l10n.t('Speclog: the hook could not be installed in {0}: {1}', repo.name, e instanceof Error ? e.message : String(e)));
+    const why = e instanceof HookError && e.code === 'bothHooksExist'
+      ? vscode.l10n.t('both commit-msg and commit-msg.local already exist; nothing was changed')
+      : e instanceof HookError ? vscode.l10n.t('this is not a git repository') : e instanceof Error ? e.message : String(e);
+    void vscode.window.showErrorMessage(vscode.l10n.t('Speclog: the hook could not be installed in {0}: {1}', repo.name, why));
   }
 }
 
