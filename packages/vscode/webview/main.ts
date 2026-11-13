@@ -6,7 +6,7 @@ import { h, post } from './dom';
 import { PropertiesView } from './properties';
 import { TopBar } from './topBar';
 import { TreeView } from './tree';
-import { mergeOpenKeys } from './viewModel';
+import { emptyTreeText, mergeOpenKeys, treeKeys } from './viewModel';
 
 type StateMessage = Extract<HostToWebview, { type: 'state' }>;
 
@@ -134,16 +134,12 @@ function renderState(m: StateMessage): void {
   attentionHeight = m.ui.attentionHeight;
   treeFraction = m.ui.treeFraction;
   selectedKey = m.ui.selectedKey;
-  const merged = mergeOpenKeys(m.ui.openKeys, pendingToggles);
+  const merged = mergeOpenKeys(m.ui.openKeys, pendingToggles, treeKeys(m.tree));
   openKeys = merged.open;
   pendingToggles = merged.pending;
   applyLayout();
   renderTopBar();
-  let empty = '';
-  if (S && m.tree.children.length === 0) {
-    empty = m.busy && m.summary.items === 0 ? S['tree.scanning'] : m.summary.items === 0 ? S['tree.empty'] : S['tree.noMatch'];
-  }
-  tree.setData(m.tree, openKeys, selectedKey, m.view, m.ui.reveal, empty);
+  tree.setData(m.tree, openKeys, selectedKey, m.view, m.ui.reveal, S ? emptyTreeText(m.tree, m.busy, m.summary.items, S) : '');
   attention.setItems(m.attention);
 }
 
@@ -167,6 +163,8 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
     case 'status':
       if (!state) break;
       state = { ...state, busy: m.busy, fetch: m.fetch, attention: m.attention };
+      // The scan ending changes "Scanning…" to the normal empty text without a new tree.
+      if (S) tree.setMessage(emptyTreeText(state.tree, state.busy, state.summary.items, S));
       renderTopBar();
       attention.setItems(m.attention);
       break;

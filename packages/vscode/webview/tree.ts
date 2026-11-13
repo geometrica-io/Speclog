@@ -77,8 +77,7 @@ export class TreeView {
     this.open = new Set(openKeys);
     this.selected = selectedKey;
     this.view = view;
-    this.message.textContent = emptyText;
-    this.message.hidden = emptyText === '';
+    this.setMessage(emptyText);
     this.relayout();
     if (reveal) {
       const i = this.indexOf(selectedKey);
@@ -88,6 +87,12 @@ export class TreeView {
       }
     }
     this.render();
+  }
+
+  /** The text shown in place of an empty tree ("" = none). */
+  setMessage(text: string): void {
+    this.message.textContent = text;
+    this.message.hidden = text === '';
   }
 
   private relayout(): void {
@@ -147,8 +152,15 @@ export class TreeView {
     }
     for (let k = 0; k < this.slots.length; k++) {
       const slot = this.slots[k];
-      slot.el.hidden = k >= count;
-      if (k < count) this.fill(slot, first + k);
+      if (k < count) {
+        slot.el.hidden = false;
+        this.fill(slot, first + k);
+      } else if (!slot.el.hidden) {
+        // A hidden slot must not answer to a row id or key.
+        slot.el.hidden = true;
+        slot.el.removeAttribute('id');
+        delete slot.el.dataset.key;
+      }
     }
     const fi = this.indexOf(this.focusKey);
     if (fi >= first && fi < last) this.element.setAttribute('aria-activedescendant', `row-${fi}`);

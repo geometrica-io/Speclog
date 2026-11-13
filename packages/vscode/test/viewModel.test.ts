@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   AttentionItemDto, BranchSummaryDto, ItemDetailsDto, STRING_KEYS, Strings, TreeNodeDto,
 } from '../src/protocol';
-import { attentionGroups, fmt, formatDetails, mergeOpenKeys, rowsForTree, statusClass, toggleInSet } from '../webview/viewModel';
+import {
+  attentionGroups, emptyTreeText, fmt, formatDetails, mergeOpenKeys, rowsForTree, statusClass, toggleInSet, treeKeys,
+} from '../webview/viewModel';
 
 /** Each string is its key, so tests read which text was chosen. */
 const S = Object.fromEntries(STRING_KEYS.map((k) => [k, k])) as Strings;
@@ -202,5 +204,35 @@ describe('mergeOpenKeys', () => {
     const r = mergeOpenKeys(['A', 'C'], new Map([['A', true], ['B', false]]));
     expect(new Set(r.open)).toEqual(new Set(['A', 'C']));
     expect(r.pending.size).toBe(0);
+  });
+});
+
+describe('mergeOpenKeys with the incoming tree', () => {
+  it('drops pending toggles whose keys are not in the tree', () => {
+    const r = mergeOpenKeys([], new Map([['A', true], ['gone', true]]), treeKeys(tree));
+    expect(r.open).toEqual(['A']);
+    expect([...r.pending.keys()]).toEqual(['A']);
+  });
+
+  it('collects every key of the tree', () => {
+    expect(treeKeys(tree)).toEqual(new Set(['A', 'A/x', 'i1', 'i2', 'i3', 'B', 'i4']));
+  });
+});
+
+describe('emptyTreeText', () => {
+  const empty: TreeNodeDto = { key: 'root', label: '', kind: 'root', done: 0, total: 0, children: [] };
+
+  it('is empty when the tree has rows', () => {
+    expect(emptyTreeText(tree, true, 0, S)).toBe('');
+  });
+
+  it('says scanning while busy without items, then the normal text when the scan ends', () => {
+    expect(emptyTreeText(empty, true, 0, S)).toBe('tree.scanning');
+    expect(emptyTreeText(empty, false, 0, S)).toBe('tree.empty');
+  });
+
+  it('says no match when items exist but the filter hides them, busy or not', () => {
+    expect(emptyTreeText(empty, false, 5, S)).toBe('tree.noMatch');
+    expect(emptyTreeText(empty, true, 5, S)).toBe('tree.noMatch');
   });
 });

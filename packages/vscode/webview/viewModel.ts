@@ -273,15 +273,36 @@ export function toggleInSet(set: readonly string[], all: readonly string[], v: s
  * Open keys from a state message merged with local toggles the host has not confirmed yet (a state
  * posted before the host saw the toggle). Confirmed toggles leave pending.
  */
-export function mergeOpenKeys(stateKeys: readonly string[], pending: ReadonlyMap<string, boolean>):
-  { open: string[]; pending: Map<string, boolean> } {
+export function mergeOpenKeys(stateKeys: readonly string[], pending: ReadonlyMap<string, boolean>,
+  inTree?: ReadonlySet<string>): { open: string[]; pending: Map<string, boolean> } {
   const open = new Set(stateKeys);
   const left = new Map<string, boolean>();
   for (const [key, isOpen] of pending) {
     if (open.has(key) === isOpen) continue;
+    if (inTree && !inTree.has(key)) continue; // gone from the tree (or pruned by the host)
     left.set(key, isOpen);
     if (isOpen) open.add(key);
     else open.delete(key);
   }
   return { open: [...open], pending: left };
+}
+
+/** Every node key of the tree below the root. */
+export function treeKeys(root: TreeNodeDto): Set<string> {
+  const keys = new Set<string>();
+  const walk = (n: TreeNodeDto): void => {
+    for (const c of n.children) {
+      keys.add(c.key);
+      walk(c);
+    }
+  };
+  walk(root);
+  return keys;
+}
+
+/** Text shown in place of an empty tree: scanning while busy with no items, else empty / no match. */
+export function emptyTreeText(tree: TreeNodeDto, busy: boolean, items: number, S: Strings): string {
+  if (tree.children.length > 0) return '';
+  if (items === 0) return busy ? S['tree.scanning'] : S['tree.empty'];
+  return S['tree.noMatch'];
 }

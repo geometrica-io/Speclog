@@ -362,7 +362,7 @@ export class SpeclogHost implements vscode.Disposable {
         this.saveUi();
         break;
       case 'openFile':
-        if (isStr(m.repoKey) && isStr(m.path)) {
+        if (isKey(m.repoKey) && isKey(m.path)) {
           await this.openFile(m.repoKey, m.path, clampLine(m.line));
         }
         break;
