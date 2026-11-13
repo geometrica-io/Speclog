@@ -11,6 +11,8 @@ export interface SpeclogApi {
   getStatusText(): string;
   isPanelOpen(): boolean;
   lastPosted(): unknown;
+  /** The webview script ran and sent "ready". */
+  webviewReady(): boolean;
 }
 
 let host: SpeclogHost | undefined;
@@ -36,6 +38,7 @@ export function activate(context: vscode.ExtensionContext): SpeclogApi {
     getStatusText: () => h.statusText,
     isPanelOpen: () => h.panelOpen,
     lastPosted: () => h.lastPosted,
+    webviewReady: () => h.webviewReady,
   };
 }
 

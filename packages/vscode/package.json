@@ -141,7 +141,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit && node esbuild.mjs",
+    "build": "tsc -p tsconfig.json --noEmit && tsc -p webview/tsconfig.json --noEmit && node esbuild.mjs",
     "test": "vitest run",
     "test:ext": "node esbuild.mjs --tests && node out/test/runTest.js"
   },

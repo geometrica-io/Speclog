@@ -32,9 +32,19 @@ export async function run(): Promise<void> {
   await waitFor('status bar "Speclog: 1/2"', () => api.getStatusText().includes('Speclog: 1/2'));
   console.log(`ok - status bar: ${api.getStatusText()}`);
 
-  const posted = api.lastPosted() as { type: string; summary: { repos: number; done: number; total: number } } | undefined;
-  assert.ok(posted, 'the panel received a state message');
-  assert.strictEqual(posted.type, 'state');
-  assert.deepStrictEqual([posted.summary.repos, posted.summary.done, posted.summary.total], [2, 1, 2]);
-  console.log('ok - the panel receives the state');
+  await waitFor('the webview script to send "ready"', () => api.webviewReady());
+  console.log('ok - the webview script runs under the CSP');
+
+  type Posted = { type: string; summary: { repos: number; done: number; items: number }; tree: { children: { kind: string; label: string }[] } };
+  await waitFor('a state message with two repositories', () => {
+    const p = api.lastPosted() as Posted | undefined;
+    return p?.type === 'state' && p.tree.children.length === 2;
+  });
+  const posted = api.lastPosted() as Posted;
+  assert.deepStrictEqual([posted.summary.repos, posted.summary.done, posted.summary.items], [2, 1, 2]);
+  // Folder names are alpha_<random>, beta_<random>.
+  const nodes = posted.tree.children;
+  assert.ok(nodes.every((c) => c.kind === 'branch'), 'repository nodes are branches');
+  assert.ok(nodes[0].label.startsWith('alpha') && nodes[1].label.startsWith('beta'), nodes.map((c) => c.label).join(', '));
+  console.log('ok - the panel receives the state; the tree has 2 repository nodes');
 }

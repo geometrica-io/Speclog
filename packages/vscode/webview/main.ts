@@ -1,0 +1,166 @@
+// Webview entry: builds the layout (top bar; tree | properties; Attention panel at the bottom),
+// renders the host's DTOs and sends intents. No user-visible text is hard-coded: it comes in "init".
+import type { HostToWebview, Strings } from '../src/protocol';
+import { AttentionView } from './attention';
+import { h, post } from './dom';
+import { PropertiesView } from './properties';
+import { TopBar } from './topBar';
+import { TreeView } from './tree';
+
+type StateMessage = Extract<HostToWebview, { type: 'state' }>;
+
+const MIN_PANE_PX = 120;
+const SPLIT_STEP_PX = 16;
+
+let S: Strings | null = null;
+let state: StateMessage | null = null;
+let attentionOpen = false;
+let attentionHeight = 180;
+let treeFraction = 0.52;
+let selectedKey = '';
+let openKeys: string[] = [];
+
+const tree = new TreeView({
+  select(key) {
+    selectedKey = key;
+    post({ type: 'select', key });
+  },
+  toggle(key, open) {
+    openKeys = open ? [...openKeys, key] : openKeys.filter((k) => k !== key);
+    post({ type: 'toggle', key, open });
+  },
+});
+const props = new PropertiesView();
+const attention = new AttentionView();
+const topBar = new TopBar({
+  setView: (view) => post({ type: 'setView', view }),
+  setFilter: (filter) => post({ type: 'setFilter', filter }),
+  toggleAttention: () => {
+    attentionOpen = !attentionOpen;
+    applyLayout();
+    sendLayout();
+    renderTopBar();
+  },
+});
+
+const treePane = h('div', { class: 'pane tree-pane' }, tree.element);
+const vsplit = h('div', { class: 'splitter vertical', attrs: { 'role': 'separator', 'aria-orientation': 'vertical', 'tabindex': '0' } });
+const propsPane = h('div', { class: 'pane props-pane' }, props.element);
+const main = h('div', { class: 'main' }, treePane, vsplit, propsPane);
+const hsplit = h('div', { class: 'splitter horizontal', attrs: { 'role': 'separator', 'aria-orientation': 'horizontal', 'tabindex': '0' } });
+const attentionPane = h('div', { class: 'pane attention-pane' }, attention.element);
+const app = document.getElementById('app')!;
+app.append(topBar.element, main, hsplit, attentionPane);
+
+function clampHeight(v: number): number {
+  const max = Math.max(MIN_PANE_PX, app.clientHeight - topBar.element.offsetHeight - MIN_PANE_PX);
+  return Math.round(Math.min(max, Math.max(40, v)));
+}
+
+function applyLayout(): void {
+  hsplit.hidden = !attentionOpen;
+  attentionPane.hidden = !attentionOpen;
+  attentionPane.style.height = `${clampHeight(attentionHeight)}px`;
+  treePane.style.flexBasis = `${(treeFraction * 100).toFixed(2)}%`;
+}
+
+function sendLayout(): void {
+  post({ type: 'layout', attentionOpen, attentionHeight, treeFraction });
+}
+
+/** Pointer drag on a splitter; the layout is sent when the drag ends. */
+function drag(el: HTMLElement, move: (e: PointerEvent) => void): void {
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    el.classList.add('dragging');
+    const onMove = (m: PointerEvent) => { move(m); applyLayout(); };
+    const onUp = () => {
+      el.releasePointerCapture(e.pointerId);
+      el.classList.remove('dragging');
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      sendLayout();
+    };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+  });
+}
+
+drag(vsplit, (e) => {
+  const r = main.getBoundingClientRect();
+  if (r.width <= 0) return;
+  treeFraction = Math.min(0.9, Math.max(0.1, (e.clientX - r.left) / r.width));
+});
+drag(hsplit, (e) => {
+  attentionHeight = clampHeight(app.getBoundingClientRect().bottom - e.clientY);
+});
+vsplit.addEventListener('keydown', (e) => {
+  const w = main.clientWidth || 1;
+  if (e.key === 'ArrowLeft') treeFraction = Math.max(0.1, treeFraction - SPLIT_STEP_PX / w);
+  else if (e.key === 'ArrowRight') treeFraction = Math.min(0.9, treeFraction + SPLIT_STEP_PX / w);
+  else return;
+  e.preventDefault();
+  applyLayout();
+  sendLayout();
+});
+hsplit.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowUp') attentionHeight = clampHeight(attentionHeight + SPLIT_STEP_PX);
+  else if (e.key === 'ArrowDown') attentionHeight = clampHeight(attentionHeight - SPLIT_STEP_PX);
+  else return;
+  e.preventDefault();
+  applyLayout();
+  sendLayout();
+});
+window.addEventListener('resize', applyLayout);
+
+function renderTopBar(): void {
+  if (!state) return;
+  topBar.update({
+    view: state.view, filter: state.filter, counts: state.counts, repos: state.repos, summary: state.summary, busy: state.busy,
+    fetch: state.fetch, attentionCount: state.attention.length, attentionOpen,
+  });
+}
+
+function renderState(m: StateMessage): void {
+  state = m;
+  attentionOpen = m.ui.attentionOpen;
+  attentionHeight = m.ui.attentionHeight;
+  treeFraction = m.ui.treeFraction;
+  selectedKey = m.ui.selectedKey;
+  openKeys = m.ui.openKeys;
+  applyLayout();
+  renderTopBar();
+  let empty = '';
+  if (S && m.tree.children.length === 0) {
+    empty = m.busy && m.summary.items === 0 ? S['tree.scanning'] : m.summary.items === 0 ? S['tree.empty'] : S['tree.noMatch'];
+  }
+  tree.setData(m.tree, openKeys, selectedKey, m.view, m.ui.reveal, empty);
+  attention.setItems(m.attention);
+}
+
+window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
+  const m = e.data;
+  if (!m || typeof m !== 'object') return;
+  switch (m.type) {
+    case 'init':
+      S = m.strings;
+      topBar.setStrings(S);
+      tree.setStrings(S);
+      props.setStrings(S);
+      attention.setStrings(S);
+      if (state) renderState(state);
+      else tree.setData({ key: 'root', label: '', kind: 'root', done: 0, total: 0, children: [] }, [], '', 'program', false, S['tree.scanning']);
+      props.setDetails(null);
+      break;
+    case 'state':
+      renderState(m);
+      break;
+    case 'details':
+      if (m.key === selectedKey || m.key === '') props.setDetails(m.details);
+      break;
+  }
+});
+
+applyLayout();
+post({ type: 'ready' });

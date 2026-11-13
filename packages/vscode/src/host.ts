@@ -1,33 +1,99 @@
-// Hosts the core Engine in the extension process: settings -> engine, engine state -> status bar
-// and panel. The panel is a placeholder until the webview UI lands (it shows the posted summary).
+// Hosts the core Engine in the extension process: settings -> engine, engine state -> status bar and
+// the Speclog panel. The host builds the tree and every DTO; the webview only renders them and sends
+// intents (see protocol.ts).
+import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { Engine, EngineState, gitVersion } from '@speclog/core';
+import {
+  ALL_STATUSES, Engine, EngineState, Filter, TreeNode, applyPreset, buildTree, countByStatus, defaultFilter, findItem,
+  gitVersion, matches,
+} from '@speclog/core';
+import {
+  attentionToDto, branchSummary, filterFromDto, filterToDto, findNode, findRepoNode, itemDetails, keyOfItem, pathToKey,
+  toTreeDto,
+} from './dto';
+import { resolveInRepo } from './files';
+import type { DetailsDto, HostToWebview, Status, ViewMode, WebviewToHost } from './protocol';
 import { SECTION, readEngineConfig } from './settings';
 import { SpeclogStatusBar } from './statusBar';
-import { Summary, summarize } from './summary';
+import { translateCoreLabel, webviewStrings } from './strings';
+import { summarize } from './summary';
 
-/** Messages to the webview (placeholder; the full protocol replaces it). */
-export type HostToWebview = {
-  type: 'state';
-  summary: Summary;
-  busy: boolean;
-  attention: number;
-  discoveryErrors: number;
-  engineError: string;
-};
+type StateMessage = Extract<HostToWebview, { type: 'state' }>;
 
 /** globalState keys: per-repository data, keyed by repository key (origin URL or absolute path). */
 const TRUST_KEY = 'speclog.trustCommits';
 const HIDDEN_KEY = 'speclog.hiddenRepos';
+/** workspaceState key of the panel's UI state. */
+const UI_KEY = 'speclog.ui';
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const VIEWS: readonly ViewMode[] = ['program', 'area', 'time'];
+const MAX_KEYS = 20000;
+
+/** Panel state remembered per workspace (the search text is not). */
+interface PersistedUi {
+  view: ViewMode;
+  statuses: Status[];
+  sizes: string[];
+  open: Record<ViewMode, string[]>;
+  selected: Record<ViewMode, string>;
+  attentionOpen: boolean;
+  attentionHeight: number;
+  treeFraction: number;
+}
+
+function defaultUi(): PersistedUi {
+  return {
+    view: 'program', statuses: filterToDto(defaultFilter()).statuses, sizes: [], open: { program: [], area: [], time: [] },
+    selected: { program: '', area: '', time: '' }, attentionOpen: false, attentionHeight: 180, treeFraction: 0.52,
+  };
+}
+
+const strList = (v: unknown, max = MAX_KEYS): string[] =>
+  (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, max) : []);
+const num = (v: unknown, fallback: number, min: number, max: number): number =>
+  (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback);
+const isView = (v: unknown): v is ViewMode => VIEWS.includes(v as ViewMode);
+const isStr = (v: unknown): v is string => typeof v === 'string';
+
+/** Validates stored UI state (it may come from an older version). */
+function readUi(raw: unknown): PersistedUi {
+  const d = defaultUi();
+  if (!raw || typeof raw !== 'object') return d;
+  const r = raw as Record<string, unknown>;
+  const per = <T>(v: unknown, f: (x: unknown) => T): Record<ViewMode, T> => {
+    const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+    return { program: f(o.program), area: f(o.area), time: f(o.time) };
+  };
+  return {
+    view: isView(r.view) ? r.view : d.view,
+    statuses: Array.isArray(r.statuses) ? filterToDto(filterFromDto({ statuses: strList(r.statuses) as Status[] })).statuses : d.statuses,
+    sizes: strList(r.sizes, 50),
+    open: per(r.open, (x) => strList(x)),
+    selected: per(r.selected, (x) => (isStr(x) ? x : '')),
+    attentionOpen: r.attentionOpen === true,
+    attentionHeight: num(r.attentionHeight, d.attentionHeight, 40, 4000),
+    treeFraction: num(r.treeFraction, d.treeFraction, 0.1, 0.9),
+  };
+}
+
+function nonce(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let s = '';
+  for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+  return s;
 }
 
 export class SpeclogHost implements vscode.Disposable {
   private engine: Engine | undefined;
+  private state: EngineState | undefined;
   private panel: vscode.WebviewPanel | undefined;
-  private last: HostToWebview | undefined;
+  private ready = false;
+  private everReady = false;
+  private last: StateMessage | undefined;
+  private ui: PersistedUi;
+  private search = '';
+  private tree: TreeNode | undefined;
+  private fullTree: TreeNode | undefined;
   private readonly statusBar = new SpeclogStatusBar();
   private readonly subscriptions: vscode.Disposable[] = [];
   private starting: Promise<void> | undefined;
@@ -35,6 +101,7 @@ export class SpeclogHost implements vscode.Disposable {
   private disposed = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {
+    this.ui = readUi(context.workspaceState.get(UI_KEY));
     this.subscriptions.push(
       this.statusBar,
       vscode.workspace.onDidChangeConfiguration((e) => {
@@ -75,20 +142,22 @@ export class SpeclogHost implements vscode.Disposable {
       this.panel.reveal();
       return;
     }
+    const dist = vscode.Uri.joinPath(this.context.extensionUri, 'dist');
     const panel = vscode.window.createWebviewPanel('speclog', vscode.l10n.t('Speclog'), vscode.ViewColumn.Active, {
-      enableScripts: false,
-      localResourceRoots: [],
+      enableScripts: true,
+      localResourceRoots: [dist],
     });
     panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'speclog.svg');
-    panel.onDidDispose(() => { this.panel = undefined; });
+    this.ready = false;
+    panel.onDidDispose(() => {
+      this.panel = undefined;
+      this.ready = false;
+    });
+    panel.webview.onDidReceiveMessage((m: unknown) => { void this.onMessage(m); });
+    // A hidden webview is discarded; it sends "ready" again when shown.
+    panel.onDidChangeViewState((e) => { if (!e.webviewPanel.visible) this.ready = false; });
     this.panel = panel;
-    this.render();
-  }
-
-  /** Sends a message to the panel (no-op while it is closed; the latest one is shown on open). */
-  post(msg: HostToWebview): void {
-    this.last = msg;
-    this.render();
+    panel.webview.html = this.html(panel.webview, dist);
   }
 
   /** Rediscovers and rebuilds every repository; retries the git check if it failed. */
@@ -116,6 +185,8 @@ export class SpeclogHost implements vscode.Disposable {
 
   async setHiddenRepos(keys: string[]): Promise<void> {
     await this.context.globalState.update(HIDDEN_KEY, [...new Set(keys)]);
+    this.rebuild();
+    this.postState(false);
   }
 
   /** Test hooks. */
@@ -128,6 +199,10 @@ export class SpeclogHost implements vscode.Disposable {
   get lastPosted(): HostToWebview | undefined {
     return this.last;
   }
+  /** The webview script ran (under the CSP) and asked for its data. */
+  get webviewReady(): boolean {
+    return this.everReady;
+  }
 
   private reconfigure(): void {
     this.engine?.updateConfig(readEngineConfig(this.trustCommits()));
@@ -135,32 +210,261 @@ export class SpeclogHost implements vscode.Disposable {
 
   private onState(s: EngineState): void {
     if (this.disposed) return;
-    const summary = summarize(s);
-    this.statusBar.update(summary);
-    this.post({
-      type: 'state',
-      summary,
-      busy: s.busy,
-      attention: s.attention.length,
-      discoveryErrors: s.discoveryErrors.length,
-      engineError: s.engineError,
-    });
+    this.state = s;
+    this.statusBar.update(summarize(s));
+    this.rebuild();
+    this.postState(false);
+    this.postDetails();
   }
 
-  private render(): void {
-    if (!this.panel) return;
-    const body = this.last
-      ? escapeHtml(JSON.stringify(this.last, null, 2))
-      : escapeHtml(vscode.l10n.t('Scanning repositories…'));
-    this.panel.webview.html = `<!DOCTYPE html>
+  // ------------------------------------------------------------------------------------------ model
+
+  private filter(): Filter {
+    return filterFromDto({ statuses: this.ui.statuses, sizes: this.ui.sizes, hiddenRepos: this.hiddenRepos(), search: this.search });
+  }
+
+  private rebuild(): void {
+    this.fullTree = undefined;
+    this.tree = this.state ? buildTree(this.state.workspace, this.ui.view, this.filter()) : undefined;
+  }
+
+  /** The unfiltered tree (dropped and hidden repositories included): details of any selected node. */
+  private full(): TreeNode | undefined {
+    if (!this.fullTree && this.state) this.fullTree = buildTree(this.state.workspace, this.ui.view, applyPreset('all'));
+    return this.fullTree;
+  }
+
+  private buildState(reveal: boolean): StateMessage | undefined {
+    const s = this.state;
+    if (!s || !this.tree) return undefined;
+    const ws = s.workspace;
+    const f = this.filter();
+    const byStatus = countByStatus(ws, f);
+    const counts = Object.fromEntries(ALL_STATUSES.map((st) => [st, byStatus.get(st) ?? 0])) as Record<Status, number>;
+    const sum = summarize(s);
+    const repos = new Map<string, string>();
+    for (const snap of ws.snapshots) if (!repos.has(snap.repo.key)) repos.set(snap.repo.key, snap.repo.name);
+    const nameOf = new Map(ws.snapshots.map((x) => [x.repo.path, x.repo.name]));
+    return {
+      type: 'state',
+      view: this.ui.view,
+      tree: toTreeDto(this.tree, translateCoreLabel),
+      counts,
+      summary: { repos: sum.repos, items: sum.total, done: sum.done, unverified: sum.unverified,
+        shown: ws.items.filter((r) => matches(r, f)).length },
+      attention: attentionToDto(s.attention, ws),
+      busy: s.busy,
+      fetch: s.fetch.map((x) => ({ repo: nameOf.get(x.repo) ?? x.repo, lastOkUnix: x.lastOkUnix, firstFailUnix: x.firstFailUnix,
+        lastError: x.lastError })),
+      filter: filterToDto(f),
+      ui: {
+        openKeys: [...this.ui.open[this.ui.view]], selectedKey: this.ui.selected[this.ui.view],
+        attentionOpen: this.ui.attentionOpen, attentionHeight: this.ui.attentionHeight, treeFraction: this.ui.treeFraction, reveal,
+      },
+      repos: [...repos].map(([key, name]) => ({ key, name }))
+        .sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key)),
+    };
+  }
+
+  private postState(reveal: boolean): void {
+    const msg = this.buildState(reveal);
+    if (!msg) return;
+    this.last = msg;
+    this.send(msg);
+  }
+
+  private details(key: string): DetailsDto | null {
+    const s = this.state;
+    if (!s || key === '') return null;
+    const full = this.full();
+    const n = (this.tree && findNode(this.tree, key)) ?? (full && findNode(full, key));
+    if (!n || n.key === 'root') return null;
+    if (n.item) {
+      const r = n.item;
+      let specState: 'none' | 'ok' | 'missing' | 'outside' = 'none';
+      if (r.item.spec !== '') {
+        const p = resolveInRepo(r.repoPath, r.item.spec);
+        specState = !p ? 'outside' : fs.existsSync(p) && fs.statSync(p).isFile() ? 'ok' : 'missing';
+      }
+      return itemDetails(s.workspace, r, key, specState);
+    }
+    // Counts and the by-status breakdown come from the unfiltered tree.
+    return branchSummary((full && findNode(full, key)) ?? n, translateCoreLabel);
+  }
+
+  private postDetails(): void {
+    if (!this.ready) return;
+    const key = this.ui.selected[this.ui.view];
+    this.send({ type: 'details', key, details: this.details(key) });
+  }
+
+  private send(msg: HostToWebview): void {
+    if (this.panel && this.ready) void this.panel.webview.postMessage(msg);
+  }
+
+  private saveUi(): void {
+    void this.context.workspaceState.update(UI_KEY, this.ui);
+  }
+
+  // ------------------------------------------------------------------------------------------ messages
+
+  /** Messages from the webview are validated: the page is local, but its input is still input. */
+  private async onMessage(raw: unknown): Promise<void> {
+    if (!raw || typeof raw !== 'object' || this.disposed) return;
+    const m = raw as WebviewToHost;
+    switch (m.type) {
+      case 'ready':
+        this.ready = true;
+        this.everReady = true;
+        this.send({ type: 'init', strings: webviewStrings() });
+        this.postState(true);
+        this.postDetails();
+        break;
+      case 'setView':
+        if (!isView(m.view) || m.view === this.ui.view) return;
+        this.ui.view = m.view;
+        this.saveUi();
+        this.rebuild();
+        this.postState(true);
+        this.postDetails();
+        break;
+      case 'setFilter': {
+        const f = filterFromDto(m.filter);
+        this.ui.statuses = filterToDto(f).statuses;
+        this.ui.sizes = [...f.sizes].slice(0, 50);
+        this.search = f.search;
+        this.saveUi();
+        const hidden = [...f.hiddenRepos];
+        const before = this.hiddenRepos();
+        if (hidden.length !== before.length || hidden.some((k) => !before.includes(k))) {
+          await this.context.globalState.update(HIDDEN_KEY, [...new Set(hidden)]);
+        }
+        this.rebuild();
+        this.postState(false);
+        break;
+      }
+      case 'select':
+        if (!isStr(m.key)) return;
+        this.ui.selected[this.ui.view] = m.key;
+        this.saveUi();
+        this.postDetails();
+        break;
+      case 'toggle': {
+        if (!isStr(m.key)) return;
+        const open = new Set(this.ui.open[this.ui.view]);
+        if (m.open === true) open.add(m.key);
+        else open.delete(m.key);
+        this.ui.open[this.ui.view] = [...open].slice(0, MAX_KEYS);
+        this.saveUi();
+        break;
+      }
+      case 'layout':
+        this.ui.attentionOpen = m.attentionOpen === true;
+        this.ui.attentionHeight = num(m.attentionHeight, this.ui.attentionHeight, 40, 4000);
+        this.ui.treeFraction = num(m.treeFraction, this.ui.treeFraction, 0.1, 0.9);
+        this.saveUi();
+        break;
+      case 'openFile':
+        if (isStr(m.repoKey) && isStr(m.path)) {
+          await this.openFile(m.repoKey, m.path, typeof m.line === 'number' && Number.isFinite(m.line) ? m.line : undefined);
+        }
+        break;
+      case 'copy':
+        if (!isStr(m.text)) return;
+        await vscode.env.clipboard.writeText(m.text.slice(0, 1000));
+        vscode.window.setStatusBarMessage(vscode.l10n.t('Copied {0}', m.text.slice(0, 12)), 2000);
+        break;
+      case 'jump':
+        if (isStr(m.repo) && isStr(m.id)) this.jump(m.repo, m.id);
+        break;
+      case 'command':
+        if (m.id === 'refresh') this.refresh();
+        else if (m.id === 'trustTaskFiles') {
+          await vscode.commands.executeCommand('speclog.trustTaskFiles', isStr(m.repoKey) ? m.repoKey : undefined);
+        } else if (m.id === 'installHook') await vscode.commands.executeCommand('speclog.installHook');
+        break;
+    }
+  }
+
+  /** Selects an item (id) or, with id "", a repository node in the Program view, opening its ancestors. */
+  private jump(repo: string, id: string): void {
+    const s = this.state;
+    if (!s) return;
+    let key: string | undefined;
+    if (id !== '') {
+      const r = findItem(s.workspace, repo, id);
+      if (!r) {
+        void vscode.window.showInformationMessage(vscode.l10n.t('Speclog: the item no longer exists.'));
+        return;
+      }
+      const full = this.full();
+      key = (this.tree && keyOfItem(this.tree, r)) ?? (full && keyOfItem(full, r));
+    } else {
+      if (this.ui.view !== 'program') {
+        this.ui.view = 'program';
+        this.rebuild();
+      }
+      const node = this.tree && findRepoNode(this.tree, repo, s.workspace.snapshots);
+      if (!node) {
+        void vscode.window.showInformationMessage(vscode.l10n.t('Speclog: the repository is hidden by the filter.'));
+        this.saveUi();
+        this.postState(false);
+        this.postDetails();
+        return;
+      }
+      key = node.key;
+    }
+    if (!key) return;
+    this.ui.selected[this.ui.view] = key;
+    const path = this.tree ? pathToKey(this.tree, key) : [];
+    const open = new Set(this.ui.open[this.ui.view]);
+    for (const k of path.slice(0, -1)) open.add(k);
+    this.ui.open[this.ui.view] = [...open].slice(0, MAX_KEYS);
+    this.saveUi();
+    this.postState(true);
+    this.postDetails();
+  }
+
+  /** Opens a file of a repository (given by path or key); only paths inside the repository. */
+  private async openFile(repoKey: string, rel: string, line: number | undefined): Promise<void> {
+    const snaps = this.state?.workspace.snapshots ?? [];
+    const snap = snaps.find((x) => x.repo.path === repoKey) ?? snaps.find((x) => x.repo.key === repoKey);
+    const full = snap ? resolveInRepo(snap.repo.path, rel) : undefined;
+    if (!full) {
+      void vscode.window.showWarningMessage(vscode.l10n.t('Speclog: {0} is outside the repository and was not opened.', rel));
+      return;
+    }
+    try {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(full));
+      const options: vscode.TextDocumentShowOptions = { preview: true };
+      if (line !== undefined && line > 0) {
+        const pos = new vscode.Position(Math.min(Math.floor(line) - 1, Math.max(0, doc.lineCount - 1)), 0);
+        options.selection = new vscode.Range(pos, pos);
+      }
+      await vscode.window.showTextDocument(doc, options);
+    } catch {
+      void vscode.window.showWarningMessage(vscode.l10n.t('Speclog: {0} could not be opened.', rel));
+    }
+  }
+
+  private html(webview: vscode.Webview, dist: vscode.Uri): string {
+    const n = nonce();
+    const script = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'webview.js'));
+    const style = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'webview.css'));
+    const csp = `default-src 'none'; script-src ${webview.cspSource} 'nonce-${n}'; style-src ${webview.cspSource};`;
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none';">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="${style}">
 <title>Speclog</title>
 </head>
-<body><pre>${body}</pre></body>
+<body>
+<div id="app"></div>
+<script nonce="${n}" src="${script}"></script>
+</body>
 </html>`;
   }
 
