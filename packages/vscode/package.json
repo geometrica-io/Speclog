@@ -2,11 +2,33 @@
   "name": "speclog",
   "displayName": "Speclog",
   "description": "%description%",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "geometrica",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/geometrica-io/Speclog.git"
+  },
+  "homepage": "https://github.com/geometrica-io/Speclog#readme",
+  "bugs": {
+    "url": "https://github.com/geometrica-io/Speclog/issues"
+  },
   "private": true,
   "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "keywords": [
+    "tasks",
+    "git",
+    "backlog",
+    "backlog.md",
+    "spec kit",
+    "task list",
+    "multi-repo",
+    "ai agents"
+  ],
   "engines": {
     "vscode": "^1.90.0"
   },

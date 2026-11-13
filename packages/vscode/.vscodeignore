@@ -1,0 +1,12 @@
+# Only dist/, assets/, l10n/, package.nls.json, package.json, LICENSE, README.md and CHANGELOG.md ship.
+src/**
+test/**
+out/**
+webview/**
+scripts/**
+node_modules/**
+tsconfig*.json
+vitest.config.ts
+esbuild.mjs
+.vscode-test/**
+**/*.map
