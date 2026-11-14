@@ -184,17 +184,29 @@ export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): 
   });
 }
 
-/** Parses `git version X.Y.Z(.windows.N)`; ok when >= 2.24.0. */
-export async function gitVersion(): Promise<{ ok: boolean; version: string; error: string }> {
-  const r = await runGit('.', ['--version'], { timeoutMs: 15000 });
-  if (!r.launched) return { ok: false, version: '', error: r.err || 'git could not be started' };
-  const m = /git version (\d+)\.(\d+)\.(\d+)/.exec(r.out);
-  if (r.code !== 0 || !m) return { ok: false, version: '', error: r.err || r.out.trim() || 'unrecognized git version output' };
+/**
+ * The oldest supported git: `log --diff-merges=first-parent` needs 2.31 (`rev-parse
+ * --end-of-options` 2.30, `%cs` 2.25).
+ */
+export const MIN_GIT_VERSION = '2.31.0';
+
+/** Parses `git --version` output (`git version X.Y.Z(.windows.N)`); ok when >= MIN_GIT_VERSION. */
+export function parseGitVersion(out: string): { ok: boolean; version: string; error: string } {
+  const m = /git version (\d+)\.(\d+)\.(\d+)/.exec(out);
+  if (!m) return { ok: false, version: '', error: out.trim() || 'unrecognized git version output' };
   const [maj, min, pat] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const ok = maj > 2 || (maj === 2 && min >= 24);
+  const ok = maj > 2 || (maj === 2 && min >= 31);
   return {
     ok,
     version: `${maj}.${min}.${pat}`,
-    error: ok ? '' : `git ${maj}.${min}.${pat} is too old; 2.24.0 or newer is required`,
+    error: ok ? '' : `git ${maj}.${min}.${pat} is too old; ${MIN_GIT_VERSION} or newer is required`,
   };
+}
+
+/** Runs `git --version` and checks it against MIN_GIT_VERSION. */
+export async function gitVersion(): Promise<{ ok: boolean; version: string; error: string }> {
+  const r = await runGit('.', ['--version'], { timeoutMs: 15000 });
+  if (!r.launched) return { ok: false, version: '', error: r.err || 'git could not be started' };
+  if (r.code !== 0) return { ok: false, version: '', error: r.err || r.out.trim() || 'unrecognized git version output' };
+  return parseGitVersion(r.out);
 }

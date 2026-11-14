@@ -81,7 +81,7 @@ export class SpeclogHost implements vscode.Disposable {
       this.statusBar.gitMissing();
       if (!this.gitErrorShown) {
         this.gitErrorShown = true;
-        void vscode.window.showErrorMessage(vscode.l10n.t('Speclog: git 2.24 or newer was not found ({0}).', git.error));
+        void vscode.window.showErrorMessage(vscode.l10n.t('Speclog: git 2.31 or newer was not found ({0}).', git.error));
       }
       return;
     }

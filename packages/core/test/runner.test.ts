@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { runGit, gitVersion } from '../src/git/runner';
+import { runGit, gitVersion, parseGitVersion } from '../src/git/runner';
 
 const ms = (t0: number) => Date.now() - t0;
 
@@ -14,11 +14,26 @@ describe('runGit', () => {
     expect(r.out.startsWith('git version')).toBe(true);
   });
 
-  it('gitVersion reports a real git >= 2.24', async () => {
+  it('gitVersion reports a real git >= 2.31', async () => {
     const v = await gitVersion();
     expect(v.ok).toBe(true);
     expect(v.version).toMatch(/^\d+\.\d+\.\d+/);
     expect(v.error).toBe('');
+  });
+
+  it('git older than 2.31 is rejected, 2.31.0 and newer accepted', () => {
+    for (const old of ['git version 2.30.9', 'git version 2.24.0', 'git version 1.9.5.windows.1']) {
+      const v = parseGitVersion(old);
+      expect(v.ok, old).toBe(false);
+      expect(v.error).toContain('2.31.0 or newer is required');
+    }
+    expect(parseGitVersion('git version 2.30.9').version).toBe('2.30.9');
+    for (const good of ['git version 2.31.0', 'git version 2.31.0.windows.1', 'git version 2.47.1', 'git version 3.0.0']) {
+      const v = parseGitVersion(good);
+      expect(v.ok, good).toBe(true);
+      expect(v.error).toBe('');
+    }
+    expect(parseGitVersion('not git').ok).toBe(false);
   });
 
   it('nonexistent directory fails cleanly', async () => {

@@ -17,8 +17,8 @@ Speclog reads the formats you already use and never modifies a task file.
 - From a file: `code --install-extension speclog-0.1.0.vsix`.
 
 Works in VS Code and VS Code based editors (Antigravity, Cursor, Windsurf, VSCodium) on Windows, macOS
-and Linux. Requires `git` on the `PATH` of the machine where the workspace runs, and VS Code 1.90 or
-newer.
+and Linux. Requires git 2.31 or later on the `PATH` of the machine where the workspace runs, and VS
+Code 1.90 or newer.
 
 ## Task formats
 

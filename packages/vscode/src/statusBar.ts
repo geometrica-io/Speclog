@@ -35,7 +35,7 @@ export class SpeclogStatusBar implements vscode.Disposable {
 
   gitMissing(): void {
     this.item.text = `$(error) ${vscode.l10n.t('Speclog: git not found')}`;
-    this.item.tooltip = vscode.l10n.t('Speclog needs git 2.24 or newer on the PATH.');
+    this.item.tooltip = vscode.l10n.t('Speclog needs git 2.31 or newer on the PATH.');
     this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
   }
 

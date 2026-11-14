@@ -96,6 +96,8 @@ plus branch-only items on unmerged branches (PM §4.2a).
   calls (`for-each-ref --no-merged`, `cat-file --batch-check`, one `log --name-only`, `--stdin`), keeping
   the last good data on a git error while showing GitError, showing only the error when the first scan
   fails, `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`, `credential.interactive=false`, low-speed limits.
+- Minimum git: 2.31 (`log --diff-merges=first-parent`; `rev-parse --end-of-options` needs 2.30). An
+  older or missing git gives one clear error instead of a scan.
 
 ### 4.5 Conflict with hand-written status (Backlog.md, Spec Kit)
 
