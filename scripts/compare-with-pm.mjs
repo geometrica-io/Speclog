@@ -12,7 +12,7 @@
 //
 // Compared per repository (keyed by folder name, as PM does): done/total of docs/tasks items
 // (PM's total excludes Dropped) and, for every Attention kind PM also has, the sorted list of refs
-// (PM prints "<ref>:<line>" when a line is known; Speclog's rows are written the same way).
+// (PM PrintCheck prints "<ref>:<line>" when a line is known; see speclogRef).
 // Differences listed in EXPLAINED are known and intentional; any other difference makes the script
 // exit 1.
 import { execFileSync } from 'node:child_process';
@@ -81,9 +81,20 @@ async function speclog(root, originFilter) {
     if (it.status !== 'dropped') c.total++;
   }
   const attention = att.map((a) => ({
-    kind: a.kind, repo: folder(a.repoPath), ref: a.line > 0 ? `${a.ref}:${a.line}` : a.ref, detail: a.detail,
+    kind: a.kind, repo: folder(a.repoPath), ref: speclogRef(a), detail: a.detail,
   }));
   return { repos: per, attention };
+}
+
+/**
+ * PM kinds whose rows carry a line: PrintCheck appends ":<line>" when line > 0, and only format-issue
+ * rows set one (Attention.cpp: parse issues and done-without-since).
+ */
+const LINE_KINDS = new Set(['formatIssue']);
+
+/** A Speclog Attention row's ref written the way PM prints it for the same kind. */
+export function speclogRef(a) {
+  return LINE_KINDS.has(a.kind) && a.line > 0 ? `${a.ref}:${a.line}` : a.ref;
 }
 
 const byText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);

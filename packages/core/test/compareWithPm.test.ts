@@ -11,6 +11,7 @@ interface Script {
   parseList(s: string): string[];
   parsePm(text: string): Side;
   compare(pm: Side, sp: Side, explained?: Record<string, string>): { diffs: Diff[]; unexplained: Diff[] };
+  speclogRef(a: { kind: string; ref: string; line: number }): string;
 }
 
 const scriptUrl = pathToFileURL(path.join(__dirname, '..', '..', '..', 'scripts', 'compare-with-pm.mjs')).href;
@@ -61,5 +62,21 @@ describe('compare-with-pm', () => {
     const explained = s.compare(pm, sp(['fff999']), { 'Alpha|attention untagged-commit': 'known' });
     expect(explained.unexplained).toEqual([]);
     expect(explained.diffs[0].reason).toBe('known');
+  });
+
+  it('writes Speclog refs as PM prints them: only format-issue rows carry ":<line>"', async () => {
+    const s = await load();
+    // PM (main.cpp PrintCheck) appends ":<line>" when line > 0; only format-issue rows set a line.
+    expect(s.speclogRef({ kind: 'formatIssue', ref: 'docs/tasks/a.md', line: 7 })).toBe('docs/tasks/a.md:7');
+    expect(s.speclogRef({ kind: 'formatIssue', ref: 'docs/tasks/.since', line: 0 })).toBe('docs/tasks/.since');
+    expect(s.speclogRef({ kind: 'evidenceConflict', ref: 'S1', line: 4 })).toBe('S1');
+    expect(s.speclogRef({ kind: 'untaggedCommit', ref: 'abc123', line: 0 })).toBe('abc123');
+    // A done-without-since row (format-issue on the first done item's line) matches PM's line.
+    const pm = s.parsePm('Alpha 0/2\nattention: format-issue Alpha docs/tasks/a.md:12 done-without-since: S1, S2\n');
+    const sp: Side = {
+      repos: new Map([['Alpha', { done: 0, total: 2 }]]),
+      attention: [{ kind: 'formatIssue', repo: 'Alpha', ref: s.speclogRef({ kind: 'formatIssue', ref: 'docs/tasks/a.md', line: 12 }), detail: '' }],
+    };
+    expect(s.compare(pm, sp).diffs).toEqual([]);
   });
 });
