@@ -7,8 +7,6 @@ verifies each task's status from git. A task is **Done** only when a commit on t
 (`Task: <id>` in the commit message). Work that sits on an unmerged branch shows as **On branch**. A
 "done" that someone or some agent wrote into a file, with no commit behind it, shows as **Unverified**.
 
-![Speclog](docs/screenshot.png)
-
 *Screenshot pending.*
 
 Speclog reads the formats you already use and never modifies a task file.
@@ -120,7 +118,20 @@ failures and git errors.
 | `speclog.staleBranchDays` | `7` | A branch with unmerged task work older than this many days is listed under Attention (minimum 1). |
 | `speclog.unverifiedDone` | `"unverified"` | How a hand-written "done" without a `Task:` commit is shown (see Statuses). |
 
-Git calls never prompt for credentials. Worktrees (where `.git` is a file) are not separate repositories.
+Worktrees (where `.git` is a file) are not separate repositories.
+
+## Credentials and fetch
+
+Speclog reads your local clones with local git and never needs a GitHub (or any other) sign-in to show
+repositories. The only network operation is the optional background `git fetch --prune origin`.
+
+Speclog never shows a credential prompt or window: git runs with `GIT_TERMINAL_PROMPT=0`,
+`GCM_INTERACTIVE=never` and `credential.interactive=false`, and ssh runs with `BatchMode=yes`. Without
+stored credentials the fetch simply fails, quietly, and the board keeps showing the last known state.
+
+When a fetch fails, the fetch indicator in the top bar turns red and its tooltip lists each repository's
+error. If a repository's fetch keeps failing for an hour, it gets a "Fetch failing" row in Attention.
+Set `speclog.fetch.enabled` to `false` to turn background fetching off.
 
 ## Commands
 
