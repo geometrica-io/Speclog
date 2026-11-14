@@ -1,0 +1,27 @@
+#!/bin/sh
+# Speclog commit-msg hook (installed by the Speclog VS Code extension).
+# Speclog commit-msg hook marker (do not remove: the installer recognises its own hook by this line).
+# Only warns, never blocks: a commit that changes files outside the task folders without a
+# "Task:" / "Task-Progress:" line gets a note on stderr. A pre-existing hook kept as
+# commit-msg.local runs first and decides the exit code.
+dir="$(dirname "$0")"
+rc=0
+if [ -f "$dir/commit-msg.local" ]; then
+  if [ -x "$dir/commit-msg.local" ]; then
+    "$dir/commit-msg.local" "$@" || rc=$?
+  else
+    sh "$dir/commit-msg.local" "$@" || rc=$?
+  fi
+fi
+msg="$1"
+[ -n "$msg" ] && [ -f "$msg" ] || exit $rc
+# Merge commits are exempt (MERGE_HEAD exists while a merge is being committed).
+git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && exit $rc
+# Same rule as the Speclog core: exact prefix, one or more spaces, non-empty value.
+grep -v '^#' "$msg" | grep -Eq '^Task(-Progress)?: +[^[:space:]]' && exit $rc
+# Files outside docs/, backlog/, .backlog/, specs/ (and the root backlog.config.yml) count as code.
+if git -c core.quotepath=off diff --cached --name-only 2>/dev/null | grep -Evq '^(docs|backlog|\.backlog|specs)/|^backlog\.config\.yml$'; then
+  echo "Speclog: no Task: line in this commit message (files outside the task folders changed)." >&2
+  echo "  Add \"Task: <id>\" to finish an item or \"Task-Progress: <id>\" to advance one." >&2
+fi
+exit $rc

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+*.vsix
+.superpowers/
+.vscode-test/
+
+# Copied from the repository root at package time (packages/vscode/scripts/copy-docs.mjs)
+packages/vscode/LICENSE
+packages/vscode/README.md
+packages/vscode/CHANGELOG.md

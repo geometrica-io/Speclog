@@ -1,0 +1,15 @@
+export * from './model';
+export * from './text';
+export * from './adapters/docsTasksParser';
+export { MIN_GIT_VERSION, gitVersion, parseGitVersion, runGit } from './git/runner';
+export type { GitOptions, GitResult } from './git/runner';
+export * from './git/commitRefs';
+export * from './git/repo';
+export * from './discovery';
+export * from './adapters';
+export * from './snapshot';
+export * from './status';
+export * from './attention';
+export * from './viewTree';
+export * from './scheduler';
+export * from './engine';

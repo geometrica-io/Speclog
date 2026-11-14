@@ -1,0 +1,178 @@
+{
+  "name": "speclog",
+  "displayName": "Speclog",
+  "description": "%description%",
+  "version": "0.1.0",
+  "publisher": "geometrica",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/geometrica-io/Speclog.git"
+  },
+  "homepage": "https://github.com/geometrica-io/Speclog#readme",
+  "bugs": {
+    "url": "https://github.com/geometrica-io/Speclog/issues"
+  },
+  "private": true,
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "keywords": [
+    "tasks",
+    "git",
+    "backlog",
+    "backlog.md",
+    "spec kit",
+    "task list",
+    "multi-repo",
+    "ai agents"
+  ],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "speclog",
+          "title": "%viewContainer.title%",
+          "icon": "assets/speclog.svg"
+        }
+      ]
+    },
+    "views": {
+      "speclog": [
+        {
+          "id": "speclog.home",
+          "name": "%view.home.name%"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "speclog.home",
+        "contents": "%view.home.welcome%"
+      }
+    ],
+    "commands": [
+      {
+        "command": "speclog.open",
+        "title": "%command.open%",
+        "category": "Speclog"
+      },
+      {
+        "command": "speclog.refresh",
+        "title": "%command.refresh%",
+        "category": "Speclog"
+      },
+      {
+        "command": "speclog.installHook",
+        "title": "%command.installHook%",
+        "category": "Speclog"
+      },
+      {
+        "command": "speclog.trustTaskFiles",
+        "title": "%command.trustTaskFiles%",
+        "category": "Speclog"
+      },
+      {
+        "command": "speclog.untrustTaskFiles",
+        "title": "%command.untrustTaskFiles%",
+        "category": "Speclog"
+      }
+    ],
+    "configuration": {
+      "title": "Speclog",
+      "properties": {
+        "speclog.roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "%config.roots%"
+        },
+        "speclog.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "%config.exclude%"
+        },
+        "speclog.originFilter": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "%config.originFilter%"
+        },
+        "speclog.fetch.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.fetch.enabled%"
+        },
+        "speclog.fetch.intervalSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 30,
+          "markdownDescription": "%config.fetch.intervalSeconds%"
+        },
+        "speclog.staleBranchDays": {
+          "type": "number",
+          "default": 7,
+          "minimum": 1,
+          "markdownDescription": "%config.staleBranchDays%"
+        },
+        "speclog.unverifiedDone": {
+          "type": "string",
+          "enum": [
+            "unverified",
+            "done",
+            "open"
+          ],
+          "enumDescriptions": [
+            "%config.unverifiedDone.unverified%",
+            "%config.unverifiedDone.done%",
+            "%config.unverifiedDone.open%"
+          ],
+          "default": "unverified",
+          "markdownDescription": "%config.unverifiedDone%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && tsc -p webview/tsconfig.json --noEmit && node esbuild.mjs",
+    "test": "vitest run",
+    "test:ext": "node esbuild.mjs --tests && node out/test/runTest.js"
+  },
+  "dependencies": {
+    "@speclog/core": "0.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.90.0",
+    "@vscode/test-electron": "^3.1.0",
+    "esbuild": "^0.28.2"
+  }
+}

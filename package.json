@@ -1,0 +1,20 @@
+{
+  "name": "speclog-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "license": "MIT",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "test:ext": "npm run test:ext --workspaces --if-present",
+    "package": "npm run build && node packages/vscode/scripts/copy-docs.mjs && cd packages/vscode && npx vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@vscode/vsce": "^4.1.1",
+    "ovsx": "1.3.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

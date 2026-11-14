@@ -1,0 +1,21 @@
+{
+  "description": "Tasks from several git repositories, with their status verified from git.",
+  "viewContainer.title": "Speclog",
+  "view.home.name": "Speclog",
+  "view.home.welcome": "Tasks from the git repositories in this workspace.\n[Open Speclog](command:speclog.open)",
+  "command.open": "Open",
+  "command.refresh": "Refresh",
+  "command.installHook": "Install commit-msg hook in this repository",
+  "command.trustTaskFiles": "Trust current task files",
+  "command.untrustTaskFiles": "Stop trusting task files",
+  "config.roots": "Folders whose direct child folders are scanned for git repositories, in addition to the workspace folders. Use absolute paths; `~` stands for your home folder. Relative paths are ignored.",
+  "config.exclude": "Folder names that are never scanned.",
+  "config.originFilter": "Only repositories whose `origin` URL contains one of these fragments (for example `github.com/owner/`). Empty: all repositories.",
+  "config.fetch.enabled": "Fetch `origin` in the background. Only `refs/remotes/origin/*` is updated; the working tree is never touched.",
+  "config.fetch.intervalSeconds": "Seconds between two background fetches of a repository.",
+  "config.staleBranchDays": "A branch with unmerged task work whose tip is older than this many days is listed under Attention.",
+  "config.unverifiedDone": "How a `done` written by hand in Backlog.md or Spec Kit task files, without a `Task:` commit, is shown.",
+  "config.unverifiedDone.unverified": "Shown as Unverified.",
+  "config.unverifiedDone.done": "Shown as done, flagged and listed under Attention.",
+  "config.unverifiedDone.open": "The file's done is ignored."
+}
