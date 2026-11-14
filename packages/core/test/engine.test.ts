@@ -1,9 +1,10 @@
 // Engine: discovery, change probe, rescans, fetches and publishing (port of ProjectManager
 // src/app/Worker.cpp behavior), run against real git repositories with a fake clock.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Engine, EngineConfig, EngineState } from '../src/engine';
+import { Engine, EngineConfig, EngineState, STOP_WAIT_MS } from '../src/engine';
+import type { fetch as realFetch } from '../src/git/repo';
 import { buildSnapshot } from '../src/snapshot';
 import { computeAttention } from '../src/attention';
 import { TestRepo, TestRemote, removeTree } from './helpers/testRepo';
@@ -288,5 +289,63 @@ describe('engine', () => {
     const p1 = e.dispose();
     expect(e.dispose()).toBe(p1);
     await p1;
+  }, T);
+
+  it('a repository without origin is never fetched and never shown as failing', async () => {
+    const local = await repo('alpha', ['A1']); // no origin
+    const remote = await TestRemote.create('beta');
+    cleanups.push(remote);
+    const fetched: string[] = [];
+    const fakeFetch: typeof realFetch = async (p) => {
+      fetched.push(p);
+      // A new message each time: every failure is published (and Attention recomputed).
+      const err = `fatal: boom ${fetched.length}`;
+      return { value: { code: 128, out: '', err, launched: true, timedOut: false, cancelled: false }, error: `git fetch: ${err}` };
+    };
+    const clock = new FakeClock();
+    const e = new Engine(config([local, remote.work], { fetchEnabled: true, fetchIntervalSec: 30 }), clock, { fetch: fakeFetch });
+    engines.push(e);
+    e.start();
+    const first = await waitFor(e, (s) => s.workspace.snapshots.length === 2 && s.fetch.some((f) => f.firstFailUnix !== 0));
+    const remotePath = first.workspace.snapshots.find((x) => x.repo.origin !== '')!.repo.path;
+    // Fetches are due again on every tick: the local-only repository never gets one.
+    for (let k = 0; k < 3; k++) {
+      clock.t += 4000;
+      await sleep(1200);
+    }
+    expect(fetched.length).toBeGreaterThan(0);
+    expect(fetched.every((p) => p === remotePath)).toBe(true);
+    const s = e.current();
+    expect(s.fetch.map((f) => f.repo)).toEqual([remotePath]);
+    const failing = s.attention.filter((a) => a.kind === 'fetchFailing');
+    expect(failing.every((a) => a.repoPath === remotePath)).toBe(true);
+    expect(failing.length).toBeGreaterThan(0);
+  }, T);
+
+  it('dispose waits at most STOP_WAIT_MS for a fetch that never ends', async () => {
+    const remote = await TestRemote.create('alpha');
+    cleanups.push(remote);
+    let started!: () => void;
+    const fetchStarted = new Promise<void>((r) => { started = r; });
+    const hanging: typeof realFetch = () => {
+      started();
+      return new Promise(() => undefined);
+    };
+    const e = new Engine(config([remote.work], { fetchEnabled: true }), new FakeClock(), { fetch: hanging });
+    engines.push(e);
+    e.start();
+    await fetchStarted;
+    vi.useFakeTimers();
+    try {
+      let done = false;
+      const p = e.dispose().then(() => { done = true; });
+      await vi.advanceTimersByTimeAsync(STOP_WAIT_MS - 1);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   }, T);
 });

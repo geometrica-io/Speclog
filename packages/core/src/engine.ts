@@ -38,7 +38,7 @@ export interface EngineState {
   attention: AttentionItem[];
   /** A rescan or fetch is running. */
   busy: boolean;
-  /** One per repository, by RepoInfo.path. */
+  /** One per repository with an origin (others are never fetched), by RepoInfo.path. */
   fetch: FetchState[];
   /** Folders whose repository could not be read during discovery. */
   discoveryErrors: DiscoverError[];
@@ -46,11 +46,12 @@ export interface EngineState {
   engineError: string;
 }
 
-/** Test seam: replaces the functions the engine calls to build and publish. */
+/** Test seam: replaces the functions the engine calls to build, fetch and publish. */
 export interface EngineDeps {
   buildSnapshot: typeof buildSnapshot;
   resolveAll: typeof resolveAll;
   computeAttention: typeof computeAttention;
+  fetch: typeof fetch;
 }
 
 export const TICK_MS = 1000;
@@ -74,7 +75,10 @@ function localToday(): string {
 
 const systemClock: EngineClock = { now: () => Math.floor(Date.now() / 1000), today: localToday };
 
-/** git's own lock: skip this fetch, retry next tick. */
+/**
+ * git's own lock: skip this fetch, retry next tick. Discovery only admits repositories whose .git
+ * is a directory; a worktree (.git file) would need `git rev-parse --git-path index.lock`.
+ */
 function gitLocked(repoPath: string): boolean {
   return fs.existsSync(path.join(repoPath, '.git', 'index.lock'));
 }
@@ -119,7 +123,7 @@ export class Engine {
   constructor(cfg: EngineConfig, clock?: EngineClock, deps?: Partial<EngineDeps>) {
     this.cfg = cfg;
     this.clock = clock ?? systemClock;
-    this.deps = { buildSnapshot, resolveAll, computeAttention, ...deps };
+    this.deps = { buildSnapshot, resolveAll, computeAttention, fetch, ...deps };
     this.state = Object.freeze({
       workspace: resolveAll([], cfg.unverifiedMode), attention: [], busy: false, fetch: [], discoveryErrors: [], engineError: '',
     });
@@ -272,7 +276,9 @@ export class Engine {
     await this.rescanChanged();
     // One fetch at a time; after each, every repository is probed again, so a commit made while
     // a long fetch round runs shows up without waiting for the whole round.
-    for (const j of dueJobs(this.timers, now, this.cfg.fetchIntervalSec, this.cfg.fetchEnabled)) {
+    // A repository without origin has nothing to fetch: it never gets a fetch job.
+    const fetchable = this.timers.filter((_, i) => this.repos[i].origin !== '');
+    for (const j of dueJobs(fetchable, now, this.cfg.fetchIntervalSec, this.cfg.fetchEnabled)) {
       if (j.kind !== 'fetch') continue;
       if (this.halted()) return;
       const i = this.timers.findIndex((t) => t.repo === j.repo);
@@ -352,7 +358,7 @@ export class Engine {
     this.setBusy(true);
     const repo = this.repos[i];
     this.timers[i].lastFetchStartUnix = this.clock.now();
-    const r = await fetch(repo.path);
+    const r = await this.deps.fetch(repo.path);
     const end = this.clock.now();
     const k = this.repos.findIndex((x) => x.path === repo.path);
     if (k < 0) return false;
@@ -396,7 +402,7 @@ export class Engine {
       if (s) snaps.push(s);
     }
     const workspace = this.deps.resolveAll(snaps, this.cfg.unverifiedMode);
-    const fetchStates = this.fetchStates.map((f) => ({ ...f }));
+    const fetchStates = this.fetchStates.filter((_, i) => this.repos[i].origin !== '').map((f) => ({ ...f }));
     const attention = this.deps.computeAttention(workspace, {
       today: this.today, staleBranchDays: this.cfg.staleBranchDays, recentDays: RECENT_DAYS, fetchFailSeconds: FETCH_FAIL_SEC,
     }, fetchStates, this.clock.now());

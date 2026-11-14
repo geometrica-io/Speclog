@@ -126,6 +126,8 @@ export class TopBar {
         lines.push(`${f.repo}: ${fmt(S.fetchFailing, clock(f.firstFailUnix), f.lastError)}`);
       } else lines.push(`${f.repo}: ${f.lastOkUnix ? clock(f.lastOkUnix) : S.notFetched}`);
     }
+    // Repositories without origin are never fetched and not listed: with only those, nothing is shown.
+    this.fetch.hidden = st.fetch.length === 0 && st.repos.length > 0;
     this.fetch.textContent = lastOk ? fmt(S.fetched, clock(lastOk)) : S.notFetched;
     this.fetch.classList.toggle('error', failing);
     this.fetch.title = lines.length ? lines.join('\n') : S.noRepositories;

@@ -123,7 +123,8 @@ Worktrees (where `.git` is a file) are not separate repositories.
 ## Credentials and fetch
 
 Speclog reads your local clones with local git and never needs a GitHub (or any other) sign-in to show
-repositories. The only network operation is the optional background `git fetch --prune origin`.
+repositories. The only network operation is the optional background `git fetch --prune origin`. A
+repository without an `origin` remote is never fetched and has no fetch state.
 
 Speclog never shows a credential prompt or window: git runs with `GIT_TERMINAL_PROMPT=0`,
 `GCM_INTERACTIVE=never` and `credential.interactive=false`, and ssh runs with `BatchMode=yes`. Without
