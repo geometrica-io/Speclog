@@ -11,7 +11,7 @@ note: The Marketplace page links to the repository, issues and license; they 404
 ## REL.2 Add a screenshot to the README
 status: open
 size: S
-note: Replace "Screenshot pending." with a real board screenshot (dark theme, several repositories).
+note: Replace "Screenshot pending." with a board screenshot (dark theme, several repositories). Use a generated demo workspace of fictional repositories and tasks (scripts/demo-workspace.mjs); never real repositories.
 
 ## REL.3 Set up the geometrica publisher and tokens
 status: open
