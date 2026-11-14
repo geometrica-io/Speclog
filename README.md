@@ -110,7 +110,7 @@ task files, manual `done` after the cutoff, uncommitted task changes, fetch fail
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `speclog.roots` | `[]` | Folders whose direct child folders are scanned for repositories, in addition to the workspace folders. |
+| `speclog.roots` | `[]` | Folders whose direct child folders are scanned for repositories, in addition to the workspace folders. Absolute paths; `~` is your home folder; relative paths are ignored. |
 | `speclog.exclude` | `[]` | Folder names that are never scanned. |
 | `speclog.originFilter` | `[]` | Only repositories whose `origin` URL contains one of these fragments (for example `github.com/owner/`). Empty: all. |
 | `speclog.fetch.enabled` | `true` | Fetch `origin` in the background. Only `refs/remotes/origin/*` is updated; the working tree is never touched. |

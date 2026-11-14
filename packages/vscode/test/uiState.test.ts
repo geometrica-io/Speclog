@@ -1,7 +1,7 @@
 // Stored panel state is validated: bad or old values fall back to defaults.
 import { describe, expect, it } from 'vitest';
 import { MAX_KEY_LENGTH } from '../src/protocol';
-import { defaultUi, isKey, readUi } from '../src/uiState';
+import { defaultUi, isKey, readHiddenRepos, readTrustCommits, readUi } from '../src/uiState';
 
 describe('readUi', () => {
   it('gives the defaults for missing or broken state', () => {
@@ -29,5 +29,20 @@ describe('isKey', () => {
     expect(isKey('x'.repeat(MAX_KEY_LENGTH))).toBe(true);
     expect(isKey('x'.repeat(MAX_KEY_LENGTH + 1))).toBe(false);
     expect(isKey(5)).toBe(false);
+  });
+});
+
+describe('stored per-repository state', () => {
+  it('keeps only string-valued trust cutoffs', () => {
+    expect(readTrustCommits(undefined)).toEqual({});
+    expect(readTrustCommits('x')).toEqual({});
+    expect(readTrustCommits(['a'])).toEqual({});
+    expect(readTrustCommits({ a: 'abc123', b: 5, c: null, d: { x: 1 }, e: '' })).toEqual({ a: 'abc123' });
+  });
+
+  it('keeps only the strings of the hidden-repository list, once each', () => {
+    expect(readHiddenRepos(undefined)).toEqual([]);
+    expect(readHiddenRepos({ a: 'b' })).toEqual([]);
+    expect(readHiddenRepos(['k1', 3, null, 'k2', 'k1', ''])).toEqual(['k1', 'k2']);
   });
 });

@@ -35,36 +35,56 @@ export async function hooksPathOf(repoPath: string): Promise<string> {
   return r.code === 0 ? r.out : '';
 }
 
+/** The file operations installHook uses (a test seam; default: Node's fs). */
+export type HookFs = Pick<typeof fs, 'readFileSync' | 'writeFileSync' | 'existsSync' | 'mkdirSync' | 'renameSync' |
+  'chmodSync' | 'rmSync'>;
+
 /**
  * Installs the hook as <git hooks dir>/commit-msg. A foreign hook is kept as commit-msg.local (the
- * hook runs it first); a 0-byte one is replaced; core.hooksPath set means nothing is touched.
+ * hook runs it first); a 0-byte one is replaced; core.hooksPath set means nothing is touched. The
+ * new hook is written to a temporary file first and renamed into place; if that fails, a foreign
+ * hook is moved back, so it is never left only as commit-msg.local.
  */
-export async function installHook(repoPath: string): Promise<InstallResult> {
+export async function installHook(repoPath: string, io: HookFs = fs): Promise<InstallResult> {
   if (await hooksPathOf(repoPath)) return 'skipped-hooksPath';
   const hp = await git(repoPath, ['rev-parse', '--git-path', 'hooks']);
   if (hp.code !== 0 || !hp.out) throw new HookError('notARepo', `not a git repository: ${repoPath}`);
   const hooks = path.resolve(repoPath, hp.out);
   const target = path.join(hooks, 'commit-msg');
   const local = path.join(hooks, 'commit-msg.local');
-  const wanted = fs.readFileSync(hookSourcePath());
-  fs.mkdirSync(hooks, { recursive: true });
+  const temp = path.join(hooks, 'commit-msg.speclog-tmp');
+  const wanted = io.readFileSync(hookSourcePath());
+  io.mkdirSync(hooks, { recursive: true });
 
   let result: InstallResult = 'installed';
-  if (fs.existsSync(target)) {
-    const current = fs.readFileSync(target);
+  if (io.existsSync(target)) {
+    const current = io.readFileSync(target);
     if (current.length === 0) {
       // nothing to keep
     } else if (current.includes(MARKER)) {
       if (current.equals(wanted)) return 'already';
       // an older Speclog hook: upgrade in place
     } else {
-      if (fs.existsSync(local)) throw new HookError('bothHooksExist', `commit-msg and commit-msg.local both exist in ${hooks}; not touching them`);
-      fs.renameSync(target, local);
+      if (io.existsSync(local)) throw new HookError('bothHooksExist', `commit-msg and commit-msg.local both exist in ${hooks}; not touching them`);
       result = 'chained';
     }
   }
-  fs.writeFileSync(target, wanted);
-  fs.chmodSync(target, 0o755);
+  const dropTemp = () => { try { io.rmSync(temp, { force: true }); } catch { /* best effort */ } };
+  try {
+    io.writeFileSync(temp, wanted);
+    io.chmodSync(temp, 0o755);
+  } catch (e) {
+    dropTemp();
+    throw e;
+  }
+  if (result === 'chained') io.renameSync(target, local);
+  try {
+    io.renameSync(temp, target);
+  } catch (e) {
+    if (result === 'chained') io.renameSync(local, target);
+    dropTemp();
+    throw e;
+  }
   return result;
 }
 

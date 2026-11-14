@@ -1,6 +1,8 @@
 // Reads the speclog.* settings into an EngineConfig.
+import * as os from 'os';
 import * as vscode from 'vscode';
 import { EngineConfig, UnverifiedMode } from '@speclog/core';
+import { expandRoots } from './files';
 
 export const SECTION = 'speclog';
 
@@ -22,7 +24,7 @@ export function readEngineConfig(trustCommits: Record<string, string>): EngineCo
       workspaceFolders: (vscode.workspace.workspaceFolders ?? [])
         .filter((f) => f.uri.scheme === 'file')
         .map((f) => f.uri.fsPath),
-      roots: strings(c.get('roots')),
+      roots: expandRoots(c.get('roots'), os.homedir()),
       exclude: strings(c.get('exclude')),
       originFilter: strings(c.get('originFilter')),
     },

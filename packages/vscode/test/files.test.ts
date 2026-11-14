@@ -1,7 +1,7 @@
 // openFile: only paths that stay inside the repository are opened.
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
-import { clampLine, resolveInRepo } from '../src/files';
+import { clampLine, expandRoots, resolveInRepo } from '../src/files';
 
 const root = path.resolve('/work/repo');
 
@@ -45,5 +45,20 @@ describe('clampLine', () => {
     expect(clampLine(Infinity)).toBeUndefined();
     expect(clampLine('4')).toBeUndefined();
     expect(clampLine(undefined)).toBeUndefined();
+  });
+});
+
+describe('expandRoots', () => {
+  const home = path.resolve('/home/me');
+  it('expands ~ to the home folder', () => {
+    expect(expandRoots(['~', '~/code', '~\\work'], home)).toEqual([home, path.join(home, 'code'), path.join(home, 'work')]);
+  });
+  it('keeps absolute folders, trimmed', () => {
+    const abs = path.resolve('/srv/repos');
+    expect(expandRoots([`  ${abs} `], home)).toEqual([abs]);
+  });
+  it('skips relative, empty, ~user and non-string entries', () => {
+    expect(expandRoots(['code', './x', '', '   ', '~bob/x', 3, null], home)).toEqual([]);
+    expect(expandRoots('not a list', home)).toEqual([]);
   });
 });

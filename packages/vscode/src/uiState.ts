@@ -57,3 +57,16 @@ export function readUi(raw: unknown): PersistedUi {
     treeFraction: num(r.treeFraction, d.treeFraction, 0.1, 0.9),
   };
 }
+
+/** Validates the stored trust cutoffs (globalState): repoKey -> non-empty commit string. */
+export function readTrustCommits(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (isStr(v) && v !== '') out[k] = v;
+  return out;
+}
+
+/** Validates the stored hidden repositories (globalState): distinct non-empty repo keys. */
+export function readHiddenRepos(raw: unknown): string[] {
+  return [...new Set(strList(raw).filter((k) => k !== ''))];
+}

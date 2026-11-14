@@ -8,7 +8,7 @@
   "command.installHook": "Install commit-msg hook in this repository",
   "command.trustTaskFiles": "Trust current task files",
   "command.untrustTaskFiles": "Stop trusting task files",
-  "config.roots": "Folders whose direct child folders are scanned for git repositories, in addition to the workspace folders.",
+  "config.roots": "Folders whose direct child folders are scanned for git repositories, in addition to the workspace folders. Use absolute paths; `~` stands for your home folder. Relative paths are ignored.",
   "config.exclude": "Folder names that are never scanned.",
   "config.originFilter": "Only repositories whose `origin` URL contains one of these fragments (for example `github.com/owner/`). Empty: all repositories.",
   "config.fetch.enabled": "Fetch `origin` in the background. Only `refs/remotes/origin/*` is updated; the working tree is never touched.",

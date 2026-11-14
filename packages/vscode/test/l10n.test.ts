@@ -16,9 +16,23 @@ export function sourceKeys(): Set<string> {
   return keys;
 }
 
+/** l10n.t( calls whose first argument is not a single-quoted literal (the bundle check would miss them). */
+export function nonLiteralCalls(text: string): string[] {
+  return [...text.matchAll(/l10n\.t\((?!\s*')[^)\n]*\)?/g)].map((m) => m[0]);
+}
+
 describe('l10n bundle', () => {
   const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'l10n', 'bundle.l10n.json'), 'utf8')) as Record<string, string>;
   const src = sourceKeys();
+  it('every l10n.t call takes a single-quoted literal', () => {
+    expect(nonLiteralCalls("l10n.t('a') l10n.t(\n  'b', x) l10n.t(\"c\") l10n.t(`d`) l10n.t(key)"))
+      .toEqual(['l10n.t("c")', 'l10n.t(`d`)', 'l10n.t(key)']);
+    const bad: string[] = [];
+    for (const f of fs.readdirSync(srcDir).filter((n) => n.endsWith('.ts'))) {
+      for (const c of nonLiteralCalls(fs.readFileSync(path.join(srcDir, f), 'utf8'))) bad.push(`${f}: ${c}`);
+    }
+    expect(bad).toEqual([]);
+  });
   it('has an entry for every l10n.t literal', () => {
     expect([...src].filter((k) => !(k in bundle))).toEqual([]);
   });

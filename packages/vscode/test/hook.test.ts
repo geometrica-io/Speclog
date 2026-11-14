@@ -5,7 +5,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TestRepo } from '../../core/test/helpers/testRepo';
 import { TASK_PATHSPECS } from '@speclog/core';
-import { hookSourcePath, hooksPathOf, installHook } from '../src/hook';
+import { HookFs, hookSourcePath, hooksPathOf, installHook } from '../src/hook';
 
 const repos: TestRepo[] = [];
 async function newRepo(name: string): Promise<TestRepo> {
@@ -174,6 +174,36 @@ describe('chaining a foreign hook', () => {
     fs.writeFileSync(path.join(hooksDir(r), 'commit-msg'), '#!/bin/sh\nexit 0\n');
     fs.writeFileSync(path.join(hooksDir(r), 'commit-msg.local'), '#!/bin/sh\nexit 0\n');
     await expect(installHook(r.dir)).rejects.toThrow(/commit-msg\.local/);
+  });
+
+  it('a failed install leaves the foreign hook where it was', async () => {
+    const foreign = '#!/bin/sh\nexit 0\n';
+    const failing = (what: 'write' | 'place'): HookFs => {
+      let refused = false;
+      return {
+        ...fs,
+        writeFileSync: ((...a: Parameters<typeof fs.writeFileSync>) => {
+          if (what === 'write') throw new Error('disk full');
+          return fs.writeFileSync(...a);
+        }) as typeof fs.writeFileSync,
+        // The first rename onto commit-msg (the new hook) fails; moving the foreign one back works.
+        renameSync: (from: fs.PathLike, to: fs.PathLike) => {
+          if (what === 'place' && !refused && path.basename(String(to)) === 'commit-msg') {
+            refused = true;
+            throw new Error('rename refused');
+          }
+          fs.renameSync(from, to);
+        },
+      };
+    };
+    for (const what of ['write', 'place'] as const) {
+      const r = await newRepo(`hook_fail_${what}`);
+      fs.mkdirSync(hooksDir(r), { recursive: true });
+      fs.writeFileSync(path.join(hooksDir(r), 'commit-msg'), foreign);
+      await expect(installHook(r.dir, failing(what))).rejects.toThrow(what === 'write' ? /disk full/ : /rename refused/);
+      expect(fs.readFileSync(path.join(hooksDir(r), 'commit-msg'), 'utf8')).toBe(foreign);
+      expect(fs.readdirSync(hooksDir(r)).filter((n) => n.startsWith('commit-msg') && !n.endsWith('.sample'))).toEqual(['commit-msg']);
+    }
   });
 
   it('a 0-byte hook is replaced, not kept as commit-msg.local', async () => {

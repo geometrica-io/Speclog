@@ -1,6 +1,7 @@
 // Hosts the core Engine in the extension process: settings -> engine, engine state -> status bar and
 // the Speclog panel. The host builds the tree and every DTO; the webview only renders them and sends
 // intents (see protocol.ts).
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {
@@ -18,7 +19,9 @@ import { SECTION, readEngineConfig } from './settings';
 import { SpeclogStatusBar } from './statusBar';
 import { translateCoreLabel, webviewStrings } from './strings';
 import { summarize } from './summary';
-import { COALESCE_MS, MAX_KEYS, PersistedUi, isKey, isStr, isView, num, readUi } from './uiState';
+import {
+  COALESCE_MS, MAX_KEYS, PersistedUi, isKey, isStr, isView, num, readHiddenRepos, readTrustCommits, readUi,
+} from './uiState';
 
 type StateMessage = Extract<HostToWebview, { type: 'state' }>;
 
@@ -28,11 +31,9 @@ const HIDDEN_KEY = 'speclog.hiddenRepos';
 /** workspaceState key of the panel's UI state. */
 const UI_KEY = 'speclog.ui';
 
+/** CSP nonce: 128 random bits from the OS generator. */
 function nonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let s = '';
-  for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
-  return s;
+  return crypto.randomBytes(16).toString('base64');
 }
 
 export class SpeclogHost implements vscode.Disposable {
@@ -126,7 +127,7 @@ export class SpeclogHost implements vscode.Disposable {
   }
 
   trustCommits(): Record<string, string> {
-    return { ...this.context.globalState.get<Record<string, string>>(TRUST_KEY, {}) };
+    return readTrustCommits(this.context.globalState.get(TRUST_KEY));
   }
 
   /** Sets (or, with no commit, removes) a repository's trust cutoff and rescans. */
@@ -148,7 +149,7 @@ export class SpeclogHost implements vscode.Disposable {
   }
 
   hiddenRepos(): string[] {
-    return [...this.context.globalState.get<string[]>(HIDDEN_KEY, [])];
+    return readHiddenRepos(this.context.globalState.get(HIDDEN_KEY));
   }
 
   async setHiddenRepos(keys: string[]): Promise<void> {
