@@ -1,7 +1,9 @@
-// Reads the speclog.* settings into an EngineConfig.
+// Reads the speclog.* settings into an EngineConfig, and the speclog.agent.* settings.
 import * as os from 'os';
 import * as vscode from 'vscode';
 import { EngineConfig, UnverifiedMode } from '@speclog/core';
+import { TerminalCommandCheck, checkTerminalCommand } from './agentPure';
+import type { AgentTarget } from './agentPure';
 import { expandRoots } from './files';
 
 export const SECTION = 'speclog';
@@ -33,5 +35,27 @@ export function readEngineConfig(trustCommits: Record<string, string>): EngineCo
     unverifiedMode: MODES.includes(mode as UnverifiedMode) ? (mode as UnverifiedMode) : 'unverified',
     staleBranchDays: positive(c.get('staleBranchDays'), 7, 1),
     trustCommits: { ...trustCommits },
+  };
+}
+
+const TARGETS: readonly AgentTarget[] = ['auto', 'chat', 'terminal', 'clipboard'];
+
+export interface AgentConfig {
+  target: AgentTarget;
+  /** Executable first, then fixed arguments, or what is wrong with the setting; never split from a string. */
+  terminalCommand: TerminalCommandCheck;
+  /** "" = the built-in template. */
+  promptTemplate: string;
+}
+
+export function readAgentConfig(): AgentConfig {
+  const c = vscode.workspace.getConfiguration(SECTION);
+  const target = c.get<string>('agent.target');
+  const tpl = c.get<unknown>('agent.promptTemplate');
+  return {
+    target: TARGETS.includes(target as AgentTarget) ? (target as AgentTarget) : 'auto',
+    // An unset setting reads as its manifest default; anything invalid is reported, never defaulted.
+    terminalCommand: checkTerminalCommand(c.get<unknown>('agent.terminalCommand'), process.platform),
+    promptTemplate: typeof tpl === 'string' ? tpl : '',
   };
 }

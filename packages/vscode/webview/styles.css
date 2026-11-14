@@ -157,7 +157,41 @@ button, input, select { font: inherit; color: inherit; }
   font-weight: 600;
   border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder, transparent));
 }
+.pane-header.with-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pane-header .button { font-weight: normal; }
+.button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.button[aria-disabled="true"]:hover { background: var(--vscode-button-secondaryBackground, var(--vscode-button-background)); }
 .empty { padding: 8px; }
+
+/* ------------------------------------------------------------------ context menu */
+
+.context-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 12em;
+  padding: 4px 0;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-contrastBorder, var(--vscode-widget-border, transparent)));
+  border-radius: 4px;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+}
+.menu-entry {
+  display: block;
+  width: 100%;
+  padding: 3px 16px;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.menu-entry:hover, .menu-entry:focus {
+  outline: none;
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
+  border-color: var(--vscode-menu-selectionBorder, transparent);
+}
+.menu-entry[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 
 /* ------------------------------------------------------------------ tree */
 

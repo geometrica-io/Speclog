@@ -108,6 +108,47 @@ task files, manual `done` after the cutoff, uncommitted task changes, fetch fail
 The commit-msg hook exempts every format's task folders in every repository, so in a repository that
 does not use Backlog.md a commit touching only `backlog/` gets no hook warning but is listed here.
 
+## Send to agent
+
+Select an open item and click **Send to agent** in the property table header (or right-click the item
+row, or run **Speclog: Send selected item to agent**). Speclog hands a coding agent a prompt with the
+item, its task file, dependencies and spec, and the rule for closing it: a `Task: <id>` line in the
+commit that finishes it. Speclog does not track what was sent; the item turns **On branch** and then
+**Done** the usual way, from git.
+
+Where the prompt goes is set by `speclog.agent.target`:
+
+- `chat`: VS Code chat opens with the prompt filled in, not sent, so you can edit it and pick the agent.
+  The prompt is also copied to the clipboard, in case no agent answers in that chat.
+- `terminal`: a new terminal named `Speclog: <id>` opens in the repository and runs
+  `speclog.agent.terminalCommand` (default `claude`) with the prompt as one argument. No shell parses
+  the prompt, so quotes, `$`, backticks and `%` arrive unchanged. The executable is a name found on
+  `PATH` or an absolute path; a relative path (such as `./bin/agent`) is refused with a message, and so is
+  an empty or malformed setting (Speclog never falls back to `claude` silently).
+- `clipboard`: the prompt is copied; paste it into any agent (Cursor, Windsurf, Antigravity, ...).
+- `auto` (default): chat (also copied to the clipboard) when this editor has it, else the clipboard.
+
+Chat is used only when the repository is open in this window; otherwise the prompt is copied and an
+**Open repository in new window** button is offered. **Speclog: Copy agent prompt** copies the prompt
+whatever the target.
+
+On Windows, npm installs CLIs as `.cmd` launchers, and cmd.exe would mangle a prompt passed to them. A
+`.cmd` / `.bat` launcher on Windows, or any prompt over 4,000 characters, gets the prompt through a file:
+Speclog writes the prompt to a file in its own extension storage (never in a repository; deleted after
+7 days) and passes `Read the task in <file> and follow it.` instead.
+
+Done and dropped items, and repositories with a git error or not scanned yet, cannot be sent (the
+button's tooltip says why). A pending decision, dependencies that are not done, work already on a
+branch, or an unverified done ask for confirmation first, and the prompt tells the agent about them.
+
+`speclog.agent.promptTemplate` replaces the built-in prompt, for example `/my-skill {repo}:{id}` to call
+your own agent skill. Placeholders: `{repo}`, `{repoPath}`, `{id}`, `{title}`, `{status}`, `{size}`,
+`{priority}`, `{area}`, `{file}`, `{line}`, `{branch}` (the branch the task file is read from),
+`{workBranch}` (the branch to continue on; empty for items on main), `{note}`, `{evidence}`,
+`{depends}`, `{spec}`, `{closingRules}` and `{guards}` (the confirmation lines above, for the agent).
+Unknown placeholders are left as written and listed in a warning. Guard lines are not added to a custom
+template unless it contains `{guards}`.
+
 ## Settings
 
 | Setting | Default | Meaning |
@@ -119,6 +160,9 @@ does not use Backlog.md a commit touching only `backlog/` gets no hook warning b
 | `speclog.fetch.intervalSeconds` | `300` | Seconds between two background fetches of a repository (minimum 30). |
 | `speclog.staleBranchDays` | `7` | A branch with unmerged task work older than this many days is listed under Attention (minimum 1). |
 | `speclog.unverifiedDone` | `"unverified"` | How a hand-written "done" without a `Task:` commit is shown (see Statuses). |
+| `speclog.agent.target` | `"auto"` | Where Send to agent delivers the prompt: `auto`, `chat`, `terminal` or `clipboard` (see Send to agent). |
+| `speclog.agent.terminalCommand` | `["claude"]` | The `terminal` target's command: executable first (a name on `PATH` or an absolute path), then fixed arguments (for example `["claude", "--model", "opus"]`). Never split from a string. A per-machine setting (`machine-overridable`). |
+| `speclog.agent.promptTemplate` | `""` | A custom prompt with placeholders; empty uses the built-in one. |
 
 Worktrees (where `.git` is a file) are not separate repositories.
 
@@ -144,6 +188,7 @@ Set `speclog.fetch.enabled` to `false` to turn background fetching off.
 - **Speclog: Refresh**
 - **Speclog: Install commit-msg hook in this repository**
 - **Speclog: Trust current task files** / **Speclog: Stop trusting task files**
+- **Speclog: Send selected item to agent** / **Speclog: Copy agent prompt**
 
 The hook is a portable POSIX `sh` script, installed per repository by the command above. It only warns
 (on stderr) when a commit changes files outside the task folders and has no `Task:` / `Task-Progress:`

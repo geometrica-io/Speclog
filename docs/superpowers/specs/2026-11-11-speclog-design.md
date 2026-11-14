@@ -42,7 +42,10 @@ repositories. Managers / team leads / customers are not a v1 target; later versi
 ## 3. Non-goals / anti-goals
 
 - **Speclog does not modify task files.** v1 is read-only; the only write is the "install hook" command
-  the user runs explicitly. A Backlog.md / Spec Kit user's files are never touched.
+  the user runs explicitly. A Backlog.md / Spec Kit user's files are never touched. v1.1 (Send to agent,
+  `2026-11-12-send-to-agent-design.md`) adds, each only on an explicit user action: opening a terminal
+  that runs the user-configured agent command, writing the clipboard, and writing prompt files in the
+  extension's own storage (`globalStorageUri/prompts/`, never inside a repository).
 - Asking users to change format (anti-goal: "move your files to use Speclog").
 - Requiring a server, an account or internet access (network optional, for fetch).
 - Showing "Done" in the `docs/tasks` format without git evidence (failure criterion).
@@ -199,6 +202,9 @@ only touches `backlog/` gets no hook warning but is listed in Attention.
   breakdown by repository / program / area; progress percentage and its curve over time (history
   recomputed from the git state at that date). Export: single-file HTML, PDF, Markdown. Shareable with
   managers / customers.
+- **v1.1 Send to agent:** pick one item, open an agent's chat in its repository with a ready prompt
+  (ID, file, note, depends, spec, `Task:` closing rule); the result is read back from git as usual.
+  A convenience, not a headline. Design: `2026-11-12-send-to-agent-design.md`.
 - **v2 GitHub:** sign-in through VS Code's built-in GitHub authentication provider, repository list +
   selection, lightweight clone (`--filter=blob:none`) of the selected ones into the extension's own storage.
 - **v2 Agents:** `speclog` CLI (npm) and an MCP server — same core; "what is open?", "what closed in

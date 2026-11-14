@@ -1,6 +1,6 @@
 // Host-side DTO building: tree, details and lookups by key / item (keys are never parsed).
 import { afterEach, describe, expect, it } from 'vitest';
-import { RepoInfo, Workspace, applyPreset, buildSnapshot, buildTree, defaultFilter, repoNodeKey, resolveAll } from '@speclog/core';
+import { AgentBlock, RepoInfo, Workspace, applyPreset, buildSnapshot, buildTree, defaultFilter, repoNodeKey, resolveAll } from '@speclog/core';
 import { TestRepo } from '../../core/test/helpers/testRepo';
 import {
   branchSummary, filterFromDto, filterToDto, findNode, findRepoNode, itemDetails, keyOfItem, pathToKey, pruneOpenKeys, toTreeDto,
@@ -12,6 +12,7 @@ afterEach(() => { while (repos.length) repos.pop()!.cleanup(); });
 
 const info = (r: TestRepo, name: string): RepoInfo => ({ name, owner: '', path: r.dir, origin: '', key: `key:${name}` });
 const today = '2026-11-12';
+const blockText = (b: AgentBlock): string => (b.kind === 'closed' ? `closed:${b.status}` : b.kind);
 
 async function workspace(): Promise<Workspace> {
   const a = await TestRepo.create('dto_a');
@@ -68,12 +69,21 @@ describe('dto', () => {
   it('builds item details with dependency, commits and spec state', async () => {
     const ws = await workspace();
     const a1 = ws.items.find((r) => r.item.id === 'A1')!;
-    const d = itemDetails(ws, a1, 'k', 'missing');
+    const d = itemDetails(ws, a1, 'k', 'missing', blockText);
     expect(d).toMatchObject({ kind: 'item', repo: 'alpha', id: 'A1', status: 'done', size: 'M', area: 'Analysis/Buckling',
       spec: 'docs/spec.md', specState: 'missing', format: 'docsTasks', taskFile: 'docs/tasks/p.md', repoKey: 'key:alpha' });
     expect(d.depends).toEqual([{ text: 'A2', target: { repoPath: a1.repoPath, id: 'A2', title: 'Second', repo: 'alpha', status: 'bug' } }]);
     expect(d.commits).toHaveLength(1);
     expect(d.commits[0]).toMatchObject({ subject: 'Do A1', closes: true });
+  }, T);
+
+  it('carries Send to agent availability: a done item is disabled with a reason, a bug item enabled', async () => {
+    const ws = await workspace();
+    const a1 = ws.items.find((r) => r.item.id === 'A1')!;
+    const a2 = ws.items.find((r) => r.item.id === 'A2')!;
+    // The reason is worded by the host (translated there) from core's structured block.
+    expect(itemDetails(ws, a1, 'k', 'none', blockText).agent).toEqual({ enabled: false, reason: 'closed:done' });
+    expect(itemDetails(ws, a2, 'k', 'none', blockText).agent).toEqual({ enabled: true, reason: '' });
   }, T);
 
   it('summarizes a branch by status from the unfiltered tree, with the oldest open item', async () => {

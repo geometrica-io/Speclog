@@ -5,23 +5,27 @@ import * as path from 'path';
 import { runTests } from '@vscode/test-electron';
 import { TestRepo, makeTempDir, removeTree } from '../../core/test/helpers/testRepo';
 
-function taskFile(prefix: string, ids: string[]): string {
-  return `# ${prefix}\nprogram: ${prefix}\narea: A\ncreated: 2026-01-01\n\n${ids.map((id) => `## ${id} Title ${id}\nstatus: open\n`).join('\n')}`;
+function taskFile(prefix: string, ids: string[], note = ''): string {
+  const extra = note ? `note: ${note}\n` : '';
+  return `# ${prefix}\nprogram: ${prefix}\narea: A\ncreated: 2026-01-01\n\n${ids.map((id) => `## ${id} Title ${id}\nstatus: open\n${extra}`).join('\n')}`;
 }
+
+/** B1's note: characters that shells and cmd.exe would mangle (the prompt itself has newlines). */
+const HOSTILE_NOTE = 'Say "hi" and \'bye\'; cost $HOME `whoami` 100% %PATH% ^caret & | <x> !bang';
 
 async function main(): Promise<void> {
   const ext = path.resolve(__dirname, '..', '..');
   const cleanups: Array<() => void> = [];
   let code = 1;
   try {
-    // alpha: A1 closed by a Task: commit on main; beta: B1 open -> "Speclog: 1/2".
+    // alpha: A1 closed by a Task: commit on main; beta: B1 open (with a hostile note) -> "Speclog: 1/2".
     const alpha = await TestRepo.create('alpha');
     cleanups.push(() => alpha.cleanup());
     await alpha.commit('Add tasks', { 'docs/tasks/a.md': taskFile('A', ['A1']) });
     await alpha.commit('Do A1\n\nTask: A1', { 'src/a.txt': 'a\n' });
     const beta = await TestRepo.create('beta');
     cleanups.push(() => beta.cleanup());
-    await beta.commit('Add tasks', { 'docs/tasks/b.md': taskFile('B', ['B1']) });
+    await beta.commit('Add tasks', { 'docs/tasks/b.md': taskFile('B', ['B1'], HOSTILE_NOTE) });
 
     const work = makeTempDir('vscode');
     cleanups.push(() => removeTree(work));

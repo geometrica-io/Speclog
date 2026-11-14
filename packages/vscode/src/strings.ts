@@ -1,6 +1,7 @@
 // Every webview text, through vscode.l10n.t (literal calls, so the l10n tooling can extract them).
 // "{0}" placeholders are passed through as "{0}" and filled in by the webview.
 import * as vscode from 'vscode';
+import type { AgentBlock, Guard } from '@speclog/core';
 import type { Strings } from './protocol';
 
 const P0 = '{0}', P1 = '{1}', P2 = '{2}';
@@ -76,6 +77,7 @@ export function webviewStrings(): Strings {
     'row.done': vscode.l10n.t('Done'),
     'row.progress': vscode.l10n.t('Progress'),
     'row.item': vscode.l10n.t('Item'),
+    'agent.send': vscode.l10n.t('Send to agent'),
     'note.branchOnly': vscode.l10n.t('new item on a branch'),
     'note.history': vscode.l10n.t('history'),
     'note.trusted': vscode.l10n.t('from file'),
@@ -150,5 +152,29 @@ export function translateCoreLabel(english: string): string {
     case '(no area)': return vscode.l10n.t('(no area)');
     case '(no date)': return vscode.l10n.t('(no date)');
     default: return english;
+  }
+}
+
+/** Why an item cannot be sent to an agent (core gives the kind, the wording is here). */
+export function agentBlockText(b: AgentBlock): string {
+  switch (b.kind) {
+    case 'closed': return b.status === 'done'
+      ? vscode.l10n.t('The item is already done.')
+      : vscode.l10n.t('The item is already dropped.');
+    case 'notScanned': return vscode.l10n.t('Repository not scanned yet.');
+    case 'gitError': return vscode.l10n.t('Git failed for this repository: {0}', b.error);
+  }
+}
+
+/** One line of the confirmation shown before sending an item with guards. */
+export function agentGuardText(g: Guard): string {
+  switch (g.kind) {
+    case 'decision': return vscode.l10n.t('This item is a pending decision.');
+    case 'openDepends': return vscode.l10n.t('Depends on items that are not done: {0}.',
+      g.depends.map((d) => (d.found ? d.id : vscode.l10n.t('{0} (not found)', d.id))).join(', '));
+    case 'onBranch': return g.branches.length > 0
+      ? vscode.l10n.t('Work on this item is already on branch {0}.', g.branches.join(', '))
+      : vscode.l10n.t('Work on this item is already on another branch.');
+    case 'unverified': return vscode.l10n.t('The file says done but there is no evidence in git.');
   }
 }

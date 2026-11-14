@@ -10,6 +10,7 @@ export * from './adapters';
 export * from './snapshot';
 export * from './status';
 export * from './attention';
+export * from './agentPrompt';
 export * from './viewTree';
 export * from './scheduler';
 export * from './engine';

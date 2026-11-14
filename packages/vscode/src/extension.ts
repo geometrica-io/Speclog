@@ -1,5 +1,6 @@
 // Extension entry point: hosts the engine, registers commands and the activity-bar view.
 import * as vscode from 'vscode';
+import { cleanPromptFiles } from './agent';
 import { registerCommands } from './commands';
 import { SpeclogHost } from './host';
 
@@ -15,6 +16,10 @@ export interface SpeclogApi {
   webviewReady(): boolean;
   /** repoKey -> trusted commit (globalState). */
   trustCommits(): Record<string, string>;
+  /** The newest details message built for the webview. */
+  lastDetails(): unknown;
+  /** Handles a message as if the webview had sent it. */
+  receive(m: unknown): Promise<void>;
 }
 
 let host: SpeclogHost | undefined;
@@ -27,7 +32,8 @@ const emptyTree: vscode.TreeDataProvider<never> = {
 export function activate(context: vscode.ExtensionContext): SpeclogApi {
   const h = new SpeclogHost(context);
   host = h;
-  context.subscriptions.push(...registerCommands(h));
+  context.subscriptions.push(...registerCommands(context, h));
+  void cleanPromptFiles(context);
 
   // The activity-bar view only shows a welcome text with an Open button; showing it opens the panel.
   const view = vscode.window.createTreeView('speclog.home', { treeDataProvider: emptyTree });
@@ -42,6 +48,8 @@ export function activate(context: vscode.ExtensionContext): SpeclogApi {
     lastPosted: () => h.lastPosted,
     webviewReady: () => h.webviewReady,
     trustCommits: () => h.trustCommits(),
+    lastDetails: () => h.lastDetails,
+    receive: (m) => h.receive(m),
   };
 }
 

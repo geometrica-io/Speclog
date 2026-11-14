@@ -77,7 +77,7 @@ function item(over: Partial<ItemDetailsDto> = {}): ItemDetailsDto {
     branchOnly: false, historical: false, trustedFromFile: false, flaggedUnverified: false, size: 'M', priority: '',
     area: 'A/B', created: '2026-01-01', note: 'n', depends: [], spec: '', specState: 'none', format: 'docsTasks',
     taskFile: 'docs/tasks/a.md', taskFileLine: 7, fileStatusText: 'open', branches: [], commits: [], doneDate: '',
-    historyDate: '', historyCommit: '', evidence: '', ...over,
+    historyDate: '', historyCommit: '', evidence: '', agent: { enabled: true, reason: '' }, ...over,
   };
 }
 
