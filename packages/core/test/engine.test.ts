@@ -302,24 +302,21 @@ describe('engine', () => {
       const err = `fatal: boom ${fetched.length}`;
       return { value: { code: 128, out: '', err, launched: true, timedOut: false, cancelled: false }, error: `git fetch: ${err}` };
     };
+    // Every reading of the clock moves it 1000 s: a fetch is due again in every round, and a failure
+    // turns into a fetchFailing row after a few rounds, however slowly the rounds run.
     const clock = new FakeClock();
+    clock.now = () => (clock.t += 1000);
     const e = new Engine(config([local, remote.work], { fetchEnabled: true, fetchIntervalSec: 30 }), clock, { fetch: fakeFetch });
     engines.push(e);
     e.start();
-    const first = await waitFor(e, (s) => s.workspace.snapshots.length === 2 && s.fetch.some((f) => f.firstFailUnix !== 0));
-    const remotePath = first.workspace.snapshots.find((x) => x.repo.origin !== '')!.repo.path;
-    // Fetches are due again on every tick: the local-only repository never gets one.
-    for (let k = 0; k < 3; k++) {
-      clock.t += 4000;
-      await sleep(1200);
-    }
-    expect(fetched.length).toBeGreaterThan(0);
+    const s = await waitFor(e, (x) => x.workspace.snapshots.length === 2 && fetched.length >= 3 &&
+      x.attention.some((a) => a.kind === 'fetchFailing'));
+    const remotePath = s.workspace.snapshots.find((x) => x.repo.origin !== '')!.repo.path;
+    // Several fetch rounds ran; the local-only repository never got one.
     expect(fetched.every((p) => p === remotePath)).toBe(true);
-    const s = e.current();
     expect(s.fetch.map((f) => f.repo)).toEqual([remotePath]);
     const failing = s.attention.filter((a) => a.kind === 'fetchFailing');
-    expect(failing.every((a) => a.repoPath === remotePath)).toBe(true);
-    expect(failing.length).toBeGreaterThan(0);
+    expect(failing.map((a) => a.repoPath)).toEqual([remotePath]);
   }, T);
 
   it('dispose waits at most STOP_WAIT_MS for a fetch that never ends', async () => {
