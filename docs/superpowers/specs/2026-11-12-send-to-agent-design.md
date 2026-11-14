@@ -138,6 +138,8 @@ receive the "stop and ask first" line. Example use: a Claude Code user sets it t
 | `onBranch` | Confirm first: "Work for this item already exists on branch <name>." The prompt names that branch. |
 | `unverified` (main §4.5) | Confirm first: "The file says done but git has no evidence." |
 | `done`, `dropped` | Action disabled (tooltip says why). |
+
+A `depends` item that is `dropped` counts as closed (like `done`). If the repository has not been scanned yet, the action is disabled ("Repository not scanned yet.").
 | Repository with a git error / not scanned yet | Action disabled. |
 
 ## 8. Changes to the main spec and CLAUDE.md (made when v1.1 is implemented)
