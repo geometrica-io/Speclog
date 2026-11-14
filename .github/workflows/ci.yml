@@ -18,3 +18,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      # Extension smoke tests in a real VS Code; Linux runners have no display, so use xvfb there.
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:ext
+      - if: runner.os != 'Linux'
+        run: npm run test:ext
