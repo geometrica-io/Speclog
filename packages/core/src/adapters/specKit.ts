@@ -92,6 +92,8 @@ function parseTasks(feature: string, file: SourceFile, spec: SourceFile | undefi
 export const specKitAdapter: TaskSourceAdapter = {
   format: 'specKit',
   pathspecs: ['specs/'],
+  // Same files as FILE_RE: one feature folder deep (glob * does not cross /).
+  statusPathspecs: [':(glob)specs/*/tasks.md', ':(glob)specs/*/spec.md'],
   idsCaseInsensitive: false,
   select(paths: string[]): string[] {
     return paths.filter((p) => FILE_RE.test(p));

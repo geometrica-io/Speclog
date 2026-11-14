@@ -47,7 +47,7 @@ export interface RepoSnapshot {
   trustCommit: string;
   /** Backlog.md / Spec Kit programs at trustCommit. */
   programsAtTrust: Program[];
-  /** The working tree or index has changes under any adapter's pathspecs. */
+  /** The working tree or index has changes in a file an adapter reads (its statusPathspecs). */
   uncommittedTaskChanges: boolean;
   /** hash -> files, recent main commits only. */
   changedFiles: Map<string, string[]>;
@@ -113,7 +113,7 @@ function parseEvidence(ev: string): { present: boolean; text: string; spec: stri
 
 /** First line of a .since blob, without a UTF-8 BOM and surrounding blanks. */
 function sinceValue(text: string): string {
-  const t = text.startsWith('﻿') ? text.slice(1) : text;
+  const t = text.startsWith('\uFEFF') ? text.slice(1) : text;
   const nl = t.search(/[\r\n]/);
   return trim(nl === -1 ? t : t.slice(0, nl));
 }
@@ -178,7 +178,8 @@ export async function buildSnapshot(repo: RepoInfo, o: SnapshotOptions): Promise
   if (err) return settle();
 
   const allSpecs = pathspecsOf(ADAPTERS);
-  const u = await hasUncommittedChanges(repo.path, allSpecs, signal);
+  const statusSpecs = [...new Set(ADAPTERS.flatMap((a) => a.statusPathspecs ?? a.pathspecs))];
+  const u = await hasUncommittedChanges(repo.path, statusSpecs, signal);
   fail(u.error);
   snap.uncommittedTaskChanges = u.value;
   if (cancelled()) return snap;

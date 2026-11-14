@@ -473,6 +473,18 @@ describe('snapshot', () => {
     expect(s.error).toBe('');
   }, T);
 
+  it('only Spec Kit tasks.md / spec.md edits under specs/ set uncommittedTaskChanges', async () => {
+    const r = await repo();
+    await r.commit('init', { 'specs/001-a/tasks.md': '# Tasks\n\n- [ ] T001 One\n', 'specs/001-a/plan.md': 'plan\n' });
+    r.write('specs/001-a/plan.md', 'changed plan\n'); // Spec Kit does not read it
+    r.write('specs/001-a/research.md', 'new\n');
+    r.write('specs/notes.md', 'new\n');
+    r.write('specs/001-a/deep/tasks.md', 'not a feature folder\n');
+    expect((await buildSnapshot(info(r), { today: today() })).uncommittedTaskChanges).toBe(false);
+    r.write('specs/002-b/spec.md', '# Spec\n');
+    expect((await buildSnapshot(info(r), { today: today() })).uncommittedTaskChanges).toBe(true);
+  }, T);
+
   it('repo with backlog and docs/tasks reads both formats', async () => {
     const r = await repo();
     await r.commit('init', {
