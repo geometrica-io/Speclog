@@ -7,7 +7,11 @@ verifies each task's status from git. A task is **Done** only when a commit on t
 (`Task: <id>` in the commit message). Work that sits on an unmerged branch shows as **On branch**. A
 "done" that someone or some agent wrote into a file, with no commit behind it, shows as **Unverified**.
 
-*Screenshot pending.*
+![The Speclog board grouped by repository and program: Backlog.md and docs/tasks items with Done, On branch, Unverified and Needs verification statuses, and the properties of a done item with its commit](docs/images/board-program.png)
+
+![The same board grouped by time, showing every status from Not started to Needs decision](docs/images/board-time.png)
+
+*Screenshots use a generated demo workspace of fictional repositories (`node scripts/demo-workspace.mjs`).*
 
 Speclog reads the formats you already use and never modifies a task file.
 
