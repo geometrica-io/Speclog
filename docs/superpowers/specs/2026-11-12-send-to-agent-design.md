@@ -1,6 +1,6 @@
 # Speclog v1.1 — Send to agent
 
-> **Status:** Draft (2026-11-12), all questions answered; awaiting user review. Extends `2026-11-11-speclog-design.md` (the "main spec"); section
+> **Status:** Approved by the user (2026-11-12). Extends `2026-11-11-speclog-design.md` (the "main spec"); section
 > numbers like "main §4.4" refer to it. Target release: **v1.1**, after v1 ships. v1 scope and its
 > acceptance criteria do not change.
 
@@ -45,7 +45,7 @@ Setting `speclog.agent.target` (default `"auto"`):
 
 | Value | What happens |
 |-------|--------------|
-| `"chat"` | VS Code's chat view opens with the prompt pre-filled (`workbench.action.chat.open` with a query; not sent automatically, so the user can edit it and pick the agent/mode). Works for Copilot and any agent that plugs into VS Code chat. |
+| `"chat"` | VS Code's chat view opens with the prompt pre-filled (`workbench.action.chat.open` with a query; not sent automatically, so the user can edit it and pick the agent/mode). Works for Copilot and any agent that plugs into VS Code chat. The prompt is also copied to the clipboard (the chat may have no agent provider behind it), and the information message says so. |
 | `"terminal"` | A new integrated terminal named `Speclog: <id>` opens with `cwd` = the item's repository and runs the command in `speclog.agent.terminalCommand` (default `claude`) with the prompt as **one argument**. The terminal is created with `shellPath`/`shellArgs` (no shell string), so no quoting differs between PowerShell, cmd, bash and zsh. |
 | `"clipboard"` | The prompt is copied; an information message says so ("Prompt for <id> copied — paste it into your agent"). Works in Cursor, Windsurf, Antigravity and any other agent. |
 | `"auto"` | `chat` when the chat command exists in this editor, else `clipboard`. |
@@ -58,7 +58,10 @@ where the repository is; the configured command must exist there.
 
 **Terminal command and Windows launchers (my decision):** `speclog.agent.terminalCommand` is an array
 — executable first, then fixed arguments (e.g. `["claude", "--model", "opus"]`); Speclog never splits a
-string. The prompt is appended as the last argument. When the resolved executable is a batch launcher
+string. The executable is a bare name (looked up on the absolute `PATH` entries) or an absolute path; a
+relative path is refused with one message naming the setting, never resolved against the repository, and
+an empty or malformed setting is refused the same way, never replaced by `claude`. The setting has
+`"scope": "machine-overridable"`. The prompt is appended as the last argument. When the resolved executable is a batch launcher
 (`.cmd` / `.bat`, as npm installs CLIs on Windows), cmd.exe would mangle `%`, `"`, `^` and newlines; in
 that case — and whenever the prompt exceeds 4,000 characters — Speclog writes the full prompt to a file
 in the extension's own storage (`globalStorageUri`, never inside a repository) and passes a one-line

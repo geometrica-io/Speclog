@@ -119,20 +119,23 @@ commit that finishes it. Speclog does not track what was sent; the item turns **
 Where the prompt goes is set by `speclog.agent.target`:
 
 - `chat`: VS Code chat opens with the prompt filled in, not sent, so you can edit it and pick the agent.
+  The prompt is also copied to the clipboard, in case no agent answers in that chat.
 - `terminal`: a new terminal named `Speclog: <id>` opens in the repository and runs
   `speclog.agent.terminalCommand` (default `claude`) with the prompt as one argument. No shell parses
-  the prompt, so quotes, `$`, backticks and `%` arrive unchanged.
+  the prompt, so quotes, `$`, backticks and `%` arrive unchanged. The executable is a name found on
+  `PATH` or an absolute path; a relative path (such as `./bin/agent`) is refused with a message, and so is
+  an empty or malformed setting (Speclog never falls back to `claude` silently).
 - `clipboard`: the prompt is copied; paste it into any agent (Cursor, Windsurf, Antigravity, ...).
-- `auto` (default): chat when this editor has it, else the clipboard.
+- `auto` (default): chat (also copied to the clipboard) when this editor has it, else the clipboard.
 
 Chat is used only when the repository is open in this window; otherwise the prompt is copied and an
 **Open repository in new window** button is offered. **Speclog: Copy agent prompt** copies the prompt
 whatever the target.
 
-On Windows, npm installs CLIs as `.cmd` launchers, and cmd.exe would mangle a prompt passed to them. For
-a `.cmd` / `.bat` launcher, and for any prompt over 4,000 characters, Speclog writes the prompt to a file
-in its own extension storage (never in a repository; deleted after 7 days) and passes
-`Read the task in <file> and follow it.` instead.
+On Windows, npm installs CLIs as `.cmd` launchers, and cmd.exe would mangle a prompt passed to them. A
+`.cmd` / `.bat` launcher on Windows, or any prompt over 4,000 characters, gets the prompt through a file:
+Speclog writes the prompt to a file in its own extension storage (never in a repository; deleted after
+7 days) and passes `Read the task in <file> and follow it.` instead.
 
 Done and dropped items, and repositories with a git error or not scanned yet, cannot be sent (the
 button's tooltip says why). A pending decision, dependencies that are not done, work already on a
@@ -158,7 +161,7 @@ template unless it contains `{guards}`.
 | `speclog.staleBranchDays` | `7` | A branch with unmerged task work older than this many days is listed under Attention (minimum 1). |
 | `speclog.unverifiedDone` | `"unverified"` | How a hand-written "done" without a `Task:` commit is shown (see Statuses). |
 | `speclog.agent.target` | `"auto"` | Where Send to agent delivers the prompt: `auto`, `chat`, `terminal` or `clipboard` (see Send to agent). |
-| `speclog.agent.terminalCommand` | `["claude"]` | The `terminal` target's command: executable first, then fixed arguments (for example `["claude", "--model", "opus"]`). Never split from a string. |
+| `speclog.agent.terminalCommand` | `["claude"]` | The `terminal` target's command: executable first (a name on `PATH` or an absolute path), then fixed arguments (for example `["claude", "--model", "opus"]`). Never split from a string. A per-machine setting (`machine-overridable`). |
 | `speclog.agent.promptTemplate` | `""` | A custom prompt with placeholders; empty uses the built-in one. |
 
 Worktrees (where `.git` is a file) are not separate repositories.
