@@ -8,7 +8,7 @@ import {
   AgentPrompt, ResolvedItem, Workspace, agentAvailability, applyPreset, buildAgentPrompt, buildTree,
 } from '@speclog/core';
 import {
-  PROMPT_FILE_ARG, TerminalCommandCheck, isInsideWorkspace, needsPromptFile, promptFileName, resolveDelivery, resolveExecutable, staleFiles,
+  PROMPT_FILE_ARG, TerminalCommandCheck, isAbsoluteCommand, isInsideWorkspace, needsPromptFile, promptFileName, resolveDelivery, resolveExecutable, staleFiles,
 } from './agentPure';
 import { findNode } from './dto';
 import { readAgentConfig } from './settings';
@@ -114,7 +114,9 @@ async function toTerminal(ctx: vscode.ExtensionContext, r: ResolvedItem, text: s
   const [cmd, ...fixedArgs] = command;
   const exe = resolveExecutable(cmd, process.env.PATH ?? '', process.env.PATHEXT ?? '', process.platform, isFile);
   if (!exe) {
-    void vscode.window.showErrorMessage(vscode.l10n.t('Agent command "{0}" was not found on PATH.', cmd));
+    void vscode.window.showErrorMessage(isAbsoluteCommand(cmd, process.platform)
+      ? vscode.l10n.t('Agent command "{0}" does not exist.', cmd)
+      : vscode.l10n.t('Agent command "{0}" was not found on PATH.', cmd));
     return 'refused';
   }
   let arg = text;

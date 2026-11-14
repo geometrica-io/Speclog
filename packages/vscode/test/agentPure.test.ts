@@ -6,6 +6,7 @@ import {
   promptFileName,
   resolveDelivery,
   checkTerminalCommand,
+  isAbsoluteCommand,
   resolveExecutable,
   staleFiles,
   type AgentTarget,
@@ -131,6 +132,20 @@ describe('round 1 fixes', () => {
     expect(resolveExecutable('claude', '.:node_modules/.bin:/usr/bin', '', 'linux', all)).toBe('/usr/bin/claude');
     expect(resolveExecutable('claude', '.;bin', EXT, 'win32', all)).toBeUndefined();
   });
+  it('on win32 a PATH entry needs a drive or UNC root (a root-only entry depends on the current drive)', () => {
+    const all = () => true;
+    expect(resolveExecutable('claude', '\\bin;\\\\srv\\tools', EXT, 'win32', all)).toBe('\\\\srv\\tools\\claude.com');
+    expect(resolveExecutable('claude', '\\bin', EXT, 'win32', all)).toBeUndefined();
+    expect(resolveExecutable('\\tools\\claude.exe', '', EXT, 'win32', all)).toBeUndefined();
+  });
+  it('isAbsoluteCommand tells an absolute command from a PATH name', () => {
+    expect(isAbsoluteCommand('C:\\tools\\claude.exe', 'win32')).toBe(true);
+    expect(isAbsoluteCommand('\\\\srv\\tools\\claude.exe', 'win32')).toBe(true);
+    expect(isAbsoluteCommand('\\tools\\claude.exe', 'win32')).toBe(false);
+    expect(isAbsoluteCommand('claude', 'win32')).toBe(false);
+    expect(isAbsoluteCommand('/opt/claude', 'linux')).toBe(true);
+    expect(isAbsoluteCommand('claude', 'linux')).toBe(false);
+  });
   it('strips quotes, skips empty PATH entries and defaults PATHEXT on win32', () => {
     expect(resolveExecutable('claude', ';"C:\\q";', '', 'win32', (p) => p === 'C:\\q\\claude.cmd')).toBe(
       'C:\\q\\claude.cmd',
@@ -173,7 +188,7 @@ describe('checkTerminalCommand', () => {
   });
   it('refuses a relative path with a separator', () => {
     for (const [cmd, platform] of [['./bin/claude', 'linux'], ['bin/claude', 'linux'], ['.\\bin\\claude', 'win32'],
-      ['tools/claude.cmd', 'win32'], ['C:claude.exe', 'win32']] as const) {
+      ['tools/claude.cmd', 'win32'], ['C:claude.exe', 'win32'], ['\\tools\\claude.exe', 'win32'], ['/tools/claude.exe', 'win32']] as const) {
       expect(checkTerminalCommand([cmd], platform)).toEqual({ ok: false, problem: 'relativePath', value: cmd });
     }
   });

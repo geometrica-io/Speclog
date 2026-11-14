@@ -37,11 +37,19 @@ export function isInsideWorkspace(repoPath: string, folders: string[], platform:
   });
 }
 
-/** True when cmd names a file by a relative path (has a separator, or a drive without a root on win32). */
+/**
+ * True for a fully rooted path. On win32 that needs a drive (`C:\`) or a UNC prefix (`\\`):
+ * path.win32.isAbsolute also accepts `\tools`, which resolves against the current drive.
+ */
+export function isAbsoluteCommand(cmd: string, platform: NodeJS.Platform): boolean {
+  return platform === 'win32' ? /^([a-zA-Z]:[\\/]|\\\\)/.test(cmd) : path.posix.isAbsolute(cmd);
+}
+
+/** True when cmd names a file by a path that is not fully rooted (see isAbsoluteCommand). */
 function isRelativePath(cmd: string, platform: NodeJS.Platform): boolean {
   const p = pathApi(platform);
   const pathLike = cmd.includes('/') || cmd.includes(p.sep) || (platform === 'win32' && cmd.includes(':'));
-  return pathLike && !p.isAbsolute(cmd);
+  return pathLike && !isAbsoluteCommand(cmd, platform);
 }
 
 export type TerminalCommandProblem = 'notList' | 'empty' | 'noExecutable' | 'relativePath';
@@ -87,13 +95,14 @@ export function resolveExecutable(
   const hasExt = win && exts.includes(p.extname(cmd).toLowerCase());
   const variants = (base: string): string[] => (!win || hasExt ? [base] : exts.map((e) => base + e));
 
-  if (p.isAbsolute(cmd)) return variants(cmd).find(exists);
+  if (isAbsoluteCommand(cmd, platform)) return variants(cmd).find(exists);
   if (isRelativePath(cmd, platform)) return undefined;
-  // Relative PATH entries (".", "node_modules\.bin") are skipped: they would depend on the working folder.
+  // Relative PATH entries (".", "node_modules\.bin", and on win32 a root-only "\bin") are skipped:
+  // they would depend on the working folder or the current drive.
   const dirs = envPath
     .split(win ? ';' : ':')
     .map((d) => d.trim().replace(/^"(.*)"$/, '$1'))
-    .filter((d) => d !== '' && p.isAbsolute(d));
+    .filter((d) => d !== '' && isAbsoluteCommand(d, platform));
   for (const dir of dirs) {
     const found = variants(p.join(dir, cmd)).find(exists);
     if (found) return found;

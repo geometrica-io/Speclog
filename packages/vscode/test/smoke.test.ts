@@ -181,6 +181,9 @@ async function agentTests(api: SpeclogApi): Promise<void> {
   await setAgent('terminalCommand', ['no-such-agent-xyz']);
   assert.strictEqual(await send(b1), 'refused');
   assert.strictEqual(speclogTerminals().length, before, 'no terminal without the command');
+  await setAgent('terminalCommand', [path.join(tempDir(), 'missing-agent.exe')]);
+  assert.strictEqual(await send(b1), 'refused', 'a missing absolute command is refused');
+  assert.strictEqual(speclogTerminals().length, before, 'no terminal for a missing absolute command');
   console.log('ok - a missing agent command is reported');
 
   for (const bad of [['./bin/agent'], [], [''], 'claude']) {

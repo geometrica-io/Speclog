@@ -3,6 +3,7 @@
   "(no area)": "(no area)",
   "(no date)": "(no date)",
   "A commit closes it; the file says {0}": "A commit closes it; the file says {0}",
+  "Agent command \"{0}\" does not exist.": "Agent command \"{0}\" does not exist.",
   "Agent command \"{0}\" was not found on PATH.": "Agent command \"{0}\" was not found on PATH.",
   "All": "All",
   "Ambiguous repository names": "Ambiguous repository names",
