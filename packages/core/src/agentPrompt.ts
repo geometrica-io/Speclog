@@ -115,6 +115,7 @@ export function placeholderValues(w: Workspace, r: ResolvedItem): Record<string,
     file: r.program.path.split('\\').join('/'),
     line: String(it.line),
     branch: sourceBranch(w, r),
+    workBranch: r.status === 'onBranch' ? (r.branches[0] ?? '') : r.branchOnly ? sourceBranch(w, r) : '',
     note: it.note,
     evidence: it.evidence,
     depends,
@@ -135,9 +136,8 @@ function builtInTemplate(r: ResolvedItem, v: Record<string, string>): string {
   if (v.evidence) lines.push('Evidence: {evidence}');
   if (v.depends) lines.push('Depends on: {depends}');
   if (v.spec) lines.push('Spec: {spec}');
-  const name = r.status === 'onBranch' ? r.branches[0] : r.branchOnly ? v.branch : '';
-  if (name) {
-    lines.push(`Continue on branch ${name}; check it out or create a worktree for it — ask me if the working tree has uncommitted changes.`);
+  if (v.workBranch) {
+    lines.push('Continue on branch {workBranch}; check it out or create a worktree for it — ask me if the working tree has uncommitted changes.');
   } else if (v.branch && r.status !== 'onBranch' && !r.branchOnly) {
     lines.push('Start from an up-to-date {branch} branch.');
   }

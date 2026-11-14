@@ -199,7 +199,16 @@ describe('buildAgentPrompt', () => {
 
   it('onBranch item cites the closing branch', () => {
     const { w, r } = mk({}, {}, { status: 'onBranch', branches: ['feature/x'] });
-    expect(buildAgentPrompt(w, r, '').text).toContain('Continue on branch feature/x');
+    const t = buildAgentPrompt(w, r, '');
+    expect(t.text).toContain('Continue on branch feature/x');
+    expect(t.text).toContain('main:docs/tasks/bl-52.md:7');
+  });
+
+  it('branch names are never parsed as placeholders', () => {
+    const { w, r } = mk({}, {}, { status: 'onBranch', branches: ['feature/{id}'] });
+    const t = buildAgentPrompt(w, r, '');
+    expect(t.text).toContain('Continue on branch feature/{id};');
+    expect(t.unknownPlaceholders).toEqual([]);
   });
 
   it('decision guard reaches the built-in prompt', () => {
