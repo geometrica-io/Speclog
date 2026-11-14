@@ -27,7 +27,8 @@ note: Remove "private": true from packages/vscode/package.json if vsce publish r
 ## REL.5 Confirm CI is green on Windows, macOS and Linux
 status: open
 size: S
-note: Attach the run for the release commit.
+note: Attach the run for the release commit. CI now also runs the extension smoke tests (xvfb on Linux).
+evidence: GitHub Actions run 43650329484 on 75ed1f1 — windows, macos, ubuntu green incl. test:ext
 
 ## REL.6 Dogfood on public Backlog.md and Spec Kit repositories
 status: open
