@@ -214,6 +214,23 @@ describe('Backlog.md adapter', () => {
     expect(q.issues[0].detail).toContain('"backlog # x"');
   });
 
+  it('backlog root config: a quoted value followed by a # comment ends at its closing quote', () => {
+    const task: SourceFile = { path: 'backlog/tasks/task-1 - A.md', text: backlogTask('TASK-1', 'To Do') };
+    for (const text of [
+      'project_name: "Demo"  # the demo\nbacklog_directory: "backlog"  # main\n',
+      "project_name: 'Demo' # the demo\nbacklog_directory: 'backlog' # main\n",
+    ]) {
+      const r = run(backlogMdAdapter, [{ path: 'backlog.config.yml', text }, task]);
+      expect(r.issues, text).toEqual([]);
+      expect(r.programs.map((p) => p.path), text).toEqual(['backlog/']);
+    }
+    // The closing quote must match the opening one.
+    const mixed = run(backlogMdAdapter, [
+      { path: 'backlog.config.yml', text: 'project_name: Demo\nbacklog_directory: "it\'s here" # x\n' }, task,
+    ]);
+    expect(mixed.issues[0].detail).toContain('"it\'s here"');
+  });
+
   it('backlog alias-bomb front matter → one syntax issue, other tasks still read', () => {
     const bomb =
       '---\nid: TASK-50\ntitle: Bomb\nstatus: To Do\n' +

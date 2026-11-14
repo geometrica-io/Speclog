@@ -168,10 +168,10 @@ function rootConfigMeta(text: string): { projectName: string; backlogDirectory: 
     if (colon === -1) continue;
     const key = line.slice(0, colon).trim();
     const rawValue = line.slice(colon + 1).trim();
-    // A quoted value keeps a "#"; an unquoted one ends at a " # comment".
-    const value = /^['"]/.test(rawValue)
-      ? rawValue.replace(/^['"]|['"]$/g, '')
-      : rawValue.replace(/\s+#.*$/, '');
+    // A quoted value is the text up to its matching closing quote (it keeps a "#", anything after
+    // the quote is a comment); an unquoted one ends at a " # comment".
+    const quoted = /^(['"])(.*?)\1/.exec(rawValue);
+    const value = quoted ? quoted[2] : rawValue.replace(/^['"]/, '').replace(/\s+#.*$/, '');
     if ((key === 'project_name' || key === 'projectName') && value) projectName = value;
     else if (key === 'backlog_directory' || key === 'backlogDirectory') {
       backlogDirectory = value.replace(/^\.\//, '').replace(/\/+$/, '');
