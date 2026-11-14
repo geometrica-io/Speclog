@@ -61,4 +61,15 @@ describe('expandRoots', () => {
     expect(expandRoots(['code', './x', '', '   ', '~bob/x', 3, null], home)).toEqual([]);
     expect(expandRoots('not a list', home)).toEqual([]);
   });
+  it('Windows: only drive-letter and UNC paths are absolute (not drive-relative \\x or /x)', () => {
+    const w = path.win32;
+    const wHome = 'C:\\Users\\me';
+    expect(expandRoots(['C:\\work', 'd:/repos', '\\\\server\\share\\x', '//server/share', '~\\code'], wHome, w))
+      .toEqual(['C:\\work', 'd:/repos', '\\\\server\\share\\x', '//server/share', 'C:\\Users\\me\\code']);
+    expect(expandRoots(['\\work', '/work', 'C:work', 'work'], wHome, w)).toEqual([]);
+  });
+  it('POSIX: a leading / is absolute, a drive letter is not', () => {
+    const p = path.posix;
+    expect(expandRoots(['/srv/repos', '~/code', 'C:\\work', 'rel'], '/home/me', p)).toEqual(['/srv/repos', '/home/me/code']);
+  });
 });

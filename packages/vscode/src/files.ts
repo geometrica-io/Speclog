@@ -27,19 +27,23 @@ export function clampLine(v: unknown): number | undefined {
 /**
  * The speclog.roots entries as absolute folders: "~" and "~/..." (or "~\...") expand to home;
  * relative paths (they would depend on the extension host's working folder), "~user" forms, empty
- * and non-string entries are skipped.
+ * and non-string entries are skipped. On Windows a root needs a drive letter ("C:\x", "C:/x") or a UNC
+ * prefix ("\\server\share"): "\x" and "/x" are relative to the current drive. pathApi: path.win32 /
+ * path.posix (default: this platform's).
  */
-export function expandRoots(raw: unknown, home: string): string[] {
+export function expandRoots(raw: unknown, home: string, pathApi: path.PlatformPath = path): string[] {
   if (!Array.isArray(raw)) return [];
+  const windows = pathApi.sep === '\\';
+  const absolute = (p: string) => pathApi.isAbsolute(p) && (!windows || /^[A-Za-z]:[\\/]|^[\\/]{2}/.test(p));
   const out: string[] = [];
   for (const v of raw) {
     if (typeof v !== 'string') continue;
     const s = v.trim();
     let p: string;
     if (s === '~') p = home;
-    else if (s.startsWith('~/') || s.startsWith('~\\')) p = path.join(home, s.slice(2));
+    else if (s.startsWith('~/') || s.startsWith('~\\')) p = pathApi.join(home, s.slice(2));
     else p = s;
-    if (p !== '' && path.isAbsolute(p)) out.push(p);
+    if (p !== '' && absolute(p)) out.push(p);
   }
   return out;
 }
