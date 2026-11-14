@@ -103,3 +103,53 @@ describe('staleFiles', () => {
     expect(staleFiles(files, now)).toEqual(['old.md']);
   });
 });
+
+describe('round 1 fixes', () => {
+  const EXT = '.COM;.EXE;.BAT;.CMD';
+  it('prefers a PATHEXT launcher over an extensionless shim on win32', () => {
+    const have = new Set(['C:\\npm\\claude', 'C:\\npm\\claude.cmd']);
+    expect(resolveExecutable('claude', 'C:\\npm', EXT, 'win32', (p) => have.has(p))).toBe('C:\\npm\\claude.cmd');
+  });
+  it('finds an explicit claude.exe with PATHEXT set', () => {
+    expect(resolveExecutable('claude.exe', 'C:\\bin', EXT, 'win32', (p) => p === 'C:\\bin\\claude.exe')).toBe(
+      'C:\\bin\\claude.exe',
+    );
+  });
+  it('treats a non-PATHEXT dot as part of the name', () => {
+    expect(resolveExecutable('python3.11', 'C:\\bin', EXT, 'win32', (p) => p === 'C:\\bin\\python3.11.exe')).toBe(
+      'C:\\bin\\python3.11.exe',
+    );
+  });
+  it('resolves a relative path against cwd', () => {
+    expect(
+      resolveExecutable('.\\bin\\claude', '', EXT, 'win32', (p) => p === 'C:\\repo\\bin\\claude.cmd', 'C:\\repo'),
+    ).toBe('C:\\repo\\bin\\claude.cmd');
+    expect(resolveExecutable('./bin/claude', '', '', 'linux', (p) => p === '/r/bin/claude', '/r')).toBe(
+      '/r/bin/claude',
+    );
+  });
+  it('strips quotes, skips empty PATH entries and defaults PATHEXT on win32', () => {
+    expect(resolveExecutable('claude', ';"C:\\q";', '', 'win32', (p) => p === 'C:\\q\\claude.cmd')).toBe(
+      'C:\\q\\claude.cmd',
+    );
+  });
+  it('isInsideWorkspace handles UNC, trailing separators and drive roots', () => {
+    expect(isInsideWorkspace('\\\\srv\\share\\repo', ['\\\\srv\\share'], 'win32')).toBe(true);
+    expect(isInsideWorkspace('\\\\srv\\share2\\repo', ['\\\\srv\\share'], 'win32')).toBe(false);
+    expect(isInsideWorkspace('C:\\a\\repo', ['C:\\a\\'], 'win32')).toBe(true);
+    expect(isInsideWorkspace('C:\\a\\repo\\', ['C:\\a'], 'win32')).toBe(true);
+    expect(isInsideWorkspace('C:\\a', ['C:\\'], 'win32')).toBe(true);
+    expect(isInsideWorkspace('/a', ['/'], 'linux')).toBe(true);
+  });
+  it('caps promptFileName at 120 characters', () => {
+    const name = promptFileName('r'.repeat(80), '001-' + 'x'.repeat(300) + '/T001', new Date(2026, 10, 12, 9, 30, 5));
+    expect(name.length).toBeLessThanOrEqual(120);
+    expect(name.endsWith('-20261112-093005.md')).toBe(true);
+  });
+  it('staleFiles boundary: exactly 7 days kept, 7 days + 1 ms stale', () => {
+    const week = 7 * 86_400_000;
+    const now = 100 * 86_400_000;
+    expect(staleFiles([{ name: 'a', mtimeMs: now - week }], now)).toEqual([]);
+    expect(staleFiles([{ name: 'b', mtimeMs: now - week - 1 }], now)).toEqual(['b']);
+  });
+});

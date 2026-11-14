@@ -43,18 +43,31 @@ export function resolveExecutable(
   pathExt: string,
   platform: NodeJS.Platform,
   exists: (p: string) => boolean,
+  cwd?: string,
 ): string | undefined {
   if (!cmd) return undefined;
   const p = pathApi(platform);
   const win = platform === 'win32';
-  const exts = win ? pathExt.split(';').filter(Boolean).map((e) => e.toLowerCase()) : [];
-  const hasExt = win && p.extname(cmd) !== '';
-  const variants = (base: string): string[] => (win && !hasExt ? [base, ...exts.map((e) => base + e)] : [base]);
+  const exts = win
+    ? (pathExt || '.COM;.EXE;.BAT;.CMD')
+        .split(';')
+        .filter(Boolean)
+        .map((e) => e.toLowerCase())
+    : [];
+  // On win32 the bare name counts only when it already carries a PATHEXT extension; otherwise the
+  // PATHEXT launchers win over extensionless shims (npm writes a `claude` sh-shim next to claude.cmd).
+  const hasExt = win && exts.includes(p.extname(cmd).toLowerCase());
+  const variants = (base: string): string[] => (!win || hasExt ? [base] : exts.map((e) => base + e));
 
   if (cmd.includes('/') || cmd.includes(p.sep)) {
-    return variants(cmd).find(exists);
+    const target = cwd && !p.isAbsolute(cmd) ? p.resolve(cwd, cmd) : cmd;
+    return variants(target).find(exists);
   }
-  for (const dir of envPath.split(win ? ';' : ':').filter(Boolean)) {
+  const dirs = envPath
+    .split(win ? ';' : ':')
+    .map((d) => d.trim().replace(/^"(.*)"$/, '$1'))
+    .filter(Boolean);
+  for (const dir of dirs) {
     const found = variants(p.join(dir, cmd)).find(exists);
     if (found) return found;
   }
@@ -65,13 +78,18 @@ export function needsPromptFile(executable: string, prompt: string): boolean {
   return /\.(cmd|bat)$/i.test(executable) || prompt.length > MAX_INLINE_PROMPT;
 }
 
+const MAX_FILE_NAME = 120;
+
 export function promptFileName(repo: string, id: string, now: Date): string {
   const z = (n: number) => String(n).padStart(2, '0');
   const stamp =
     `${now.getFullYear()}${z(now.getMonth() + 1)}${z(now.getDate())}-` +
     `${z(now.getHours())}${z(now.getMinutes())}${z(now.getSeconds())}`;
   const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, '_');
-  return `${safe(repo)}-${safe(id)}-${stamp}.md`;
+  const suffix = `-${stamp}.md`;
+  const r = safe(repo).slice(0, 30);
+  const i = safe(id).slice(0, Math.max(0, MAX_FILE_NAME - suffix.length - r.length - 1));
+  return `${r}-${i}${suffix}`;
 }
 
 export function staleFiles(files: { name: string; mtimeMs: number }[], nowMs: number): string[] {
