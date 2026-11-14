@@ -1,6 +1,6 @@
 // Host-side DTO building: tree, details and lookups by key / item (keys are never parsed).
 import { afterEach, describe, expect, it } from 'vitest';
-import { RepoInfo, Workspace, applyPreset, buildSnapshot, buildTree, defaultFilter, resolveAll } from '@speclog/core';
+import { RepoInfo, Workspace, applyPreset, buildSnapshot, buildTree, defaultFilter, repoNodeKey, resolveAll } from '@speclog/core';
 import { TestRepo } from '../../core/test/helpers/testRepo';
 import {
   branchSummary, filterFromDto, filterToDto, findNode, findRepoNode, itemDetails, keyOfItem, pathToKey, pruneOpenKeys, toTreeDto,
@@ -49,8 +49,20 @@ describe('dto', () => {
     const path = pathToKey(tree, key);
     expect(path).toHaveLength(3);
     expect(path[2]).toBe(key);
-    expect(findRepoNode(tree, ws.snapshots[1].repo.path, ws.snapshots)!.label).toBe('beta');
+    expect(findRepoNode(tree, ws.snapshots[1].repo.path)!.label).toBe('beta');
     expect(findRepoNode(tree, ws.snapshots[0].repo.path)!.label).toBe('alpha');
+    expect(findRepoNode(tree, '/no/such/repo')).toBeUndefined();
+  }, T);
+
+  it('finds same-named repositories without items by path, not by label', async () => {
+    const ws = await workspace();
+    const b = ws.snapshots[1];
+    const twin = { ...b, repo: { ...b.repo, path: `${b.repo.path}_twin`, key: 'key:twin' } };
+    const two = resolveAll([b, twin], 'unverified');
+    const tree = buildTree(two, 'program', defaultFilter());
+    expect(tree.children.map((c) => c.label)).toHaveLength(2);
+    expect(findRepoNode(tree, b.repo.path)!.key).toBe(repoNodeKey(b.repo.path));
+    expect(findRepoNode(tree, twin.repo.path)!.key).toBe(repoNodeKey(twin.repo.path));
   }, T);
 
   it('builds item details with dependency, commits and spec state', async () => {

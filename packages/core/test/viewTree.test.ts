@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   FilterPreset, NO_AREA_KEY, NO_DATE_KEY, TreeNode, ViewMode, applyPreset, buildTree, countByStatus, defaultFilter,
-  matches, narrowing,
+  matches, narrowing, repoNodeKey,
 } from '../src/viewTree';
 import { Workspace, resolveAll } from '../src/status';
 import type { BranchData, RepoSnapshot } from '../src/snapshot';
@@ -328,6 +328,22 @@ describe('view tree (Speclog extras)', () => {
     const f = defaultFilter();
     f.hiddenRepos = new Set(['git@h:o/App.git']);
     expect(buildTree(w, 'program', f).children).toEqual([]);
+    expect(t.children.map((c) => c.key)).toEqual(['/work/one/App', '/work/two/App'].map(repoNodeKey));
+  });
+
+  it('a hidden same-named repository does not add a location suffix', () => {
+    const w = make(
+      repo('App', [prog('a.md', 'A', [item('X1')])], '/work/one/App', 'k1'),
+      repo('App', [prog('a.md', 'A', [item('X1')])], '/work/two/App', 'k2'),
+      repo('Lib', [], '/work/one/Lib', 'k3'),
+      repo('Lib', [], '/work/two/Lib', 'k4'),
+    );
+    const f = defaultFilter();
+    f.hiddenRepos = new Set(['k2', 'k4']);
+    const t = buildTree(w, 'program', f);
+    expect(t.children.map((c) => [c.key, c.label])).toEqual([
+      [repoNodeKey('/work/one/App'), 'App'], [repoNodeKey('/work/one/Lib'), 'Lib'],
+    ]);
   });
 
   it('countByStatus ignores statuses but honours search', () => {

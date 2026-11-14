@@ -360,8 +360,8 @@ describe('status engine (Speclog)', () => {
     expect(ia.status).toBe('open');
     expect(ia.commits).toEqual([]);
     // One row per commit and name, ignoring the name's case.
-    expect(w.ambiguousRepoRefs).toEqual([{ repo: 'App', hash: 'h2', refRepo: 'lib' }]);
-    expect(w.unknownRefs).toEqual([{ repo: 'App', hash: 'h3', refRepo: 'carol/Lib', refId: 'L1' }]);
+    expect(w.ambiguousRepoRefs).toEqual([{ repo: 'App', repoPath: app.repo.path, hash: 'h2', refRepo: 'lib' }]);
+    expect(w.unknownRefs).toEqual([{ repo: 'App', repoPath: app.repo.path, hash: 'h3', refRepo: 'carol/Lib', refId: 'L1' }]);
     // Dependencies follow the same repository rule.
     expect(findDependency(w, 'App', 'bob/Lib:L1')).toBe(ib);
     expect(findDependency(w, 'App', 'Lib:L1')).toBeUndefined();
@@ -375,7 +375,7 @@ describe('status engine (Speclog)', () => {
       prog('backlog/completed/y.md', [mkItem('TASK-1', 'open', { title: 'second' })], 'backlogMd'),
     ]));
     expect(w.items.length).toBe(1);
-    expect(w.duplicates).toEqual([{ repo: 'R', id: 'task-1', paths: ['backlog/tasks/x.md', 'backlog/completed/y.md'] }]);
+    expect(w.duplicates).toEqual([{ repo: 'R', repoPath: '/r//R', id: 'task-1', paths: ['backlog/tasks/x.md', 'backlog/completed/y.md'] }]);
     expect(must(findItem(w, 'R', 'TASK-1')).item.title).toBe('first');
   });
 
@@ -406,7 +406,8 @@ describe('status engine (Speclog)', () => {
     expect(rb.status).toBe('done');
     // A Task line in clone B does not close clone A's item.
     expect(ra.status).toBe('open');
-    expect(w.unknownRefs).toEqual([{ repo: 'R', hash: 'h1', refRepo: '', refId: 'A1' }]);
+    // The record belongs to clone B, where the commit is.
+    expect(w.unknownRefs).toEqual([{ repo: 'R', repoPath: '/clone2/R', hash: 'h1', refRepo: '', refId: 'A1' }]);
     // A shared name or key gives the first clone; its path picks the clone.
     expect(findItem(w, 'R', 'A1')).toBe(ra);
     expect(findItem(w, a.repo.key, 'B1')).toBeUndefined();

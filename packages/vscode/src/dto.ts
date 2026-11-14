@@ -1,8 +1,8 @@
 // Builds the webview DTOs from core data and looks nodes up by key or item. Pure (no `vscode`):
 // tree keys are opaque, so nodes are found by comparing keys or node.item, never by parsing.
 import {
-  ALL_STATUSES, AttentionItem, Filter, NO_AREA_KEY, NO_DATE_KEY, ResolvedItem, RepoSnapshot, Status, TreeNode,
-  Workspace, findDependency,
+  ALL_STATUSES, AttentionItem, Filter, NO_AREA_KEY, NO_DATE_KEY, ResolvedItem, Status, TreeNode,
+  Workspace, findDependency, repoNodeKey,
 } from '@speclog/core';
 import type {
   AttentionItemDto, BranchSummaryDto, FilterDto, ItemDetailsDto, Status as StatusDto, TreeNodeDto,
@@ -67,17 +67,10 @@ export function keyOfItem(root: TreeNode, r: ResolvedItem): string | undefined {
   return found;
 }
 
-/** Program view: the repository node of repoPath (it holds an item of that repository, or is its placeholder parent). */
-export function findRepoNode(root: TreeNode, repoPath: string, snapshots?: readonly RepoSnapshot[]): TreeNode | undefined {
-  const holds = (n: TreeNode): boolean => (n.item ? n.item.repoPath === repoPath : n.children.some(holds));
-  const byItem = root.children.find(holds);
-  if (byItem) return byItem;
-  // A repository without items: its only child is a placeholder; match by name (labels of same-named
-  // repositories carry a location suffix, so only an unambiguous name is used).
-  const name = snapshots?.find((s) => s.repo.path === repoPath)?.repo.name;
-  const empty = root.children.filter((c) => c.children.length === 1 && c.children[0].placeholder);
-  const named = empty.filter((c) => c.label === name || (name !== undefined && c.label.startsWith(`${name} (`)));
-  return named.length === 1 ? named[0] : undefined;
+/** Program view: the repository node of repoPath (undefined when hidden or filtered out). */
+export function findRepoNode(root: TreeNode, repoPath: string): TreeNode | undefined {
+  const key = repoNodeKey(repoPath);
+  return root.children.find((c) => c.key === key);
 }
 
 export function itemDetails(ws: Workspace, r: ResolvedItem, key: string, specState: ItemDetailsDto['specState']): ItemDetailsDto {

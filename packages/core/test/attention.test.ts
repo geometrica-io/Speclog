@@ -466,6 +466,23 @@ describe('attention (Speclog extras)', () => {
     expect(rows[0].detail).toBe('lib');
   });
 
+  it('unknown, duplicate and ambiguous rows of same-named clones carry their own repoPath', () => {
+    const clone = (p: string) => {
+      const s = repo('App', p);
+      s.programs.push(prog([item('S1')], 'docsTasks', 'docs/tasks/a.md'), prog([item('S1')], 'docsTasks', 'docs/tasks/b.md'));
+      s.mainCommits.push({ ...commit('h1', '2026-11-01'), refs: { done: [{ repo: '', id: 'Nope' }, { repo: 'lib', id: 'L1' }], progress: [] } });
+      return s;
+    };
+    const w = resolveAll([clone('/x/App'), clone('/y/App'), repo('Lib', '/x/Lib'), repo('Lib', '/y/Lib')], 'unverified');
+    expect(w.unknownRefs.map((u) => u.repoPath)).toEqual(['/x/App', '/y/App']);
+    expect(w.duplicates.map((d) => d.repoPath)).toEqual(['/x/App', '/y/App']);
+    expect(w.ambiguousRepoRefs.map((a) => a.repoPath)).toEqual(['/x/App', '/y/App']);
+    const v = run(w);
+    for (const k of ['unknownRef', 'duplicateId', 'ambiguousRepoRef'] as const) {
+      expect(v.filter((a) => a.kind === k).map((a) => a.repoPath).sort(), k).toEqual(['/x/App', '/y/App']);
+    }
+  });
+
   it('carries repoPath and orders kinds as declared', () => {
     const s = repo();
     s.error = 'boom';

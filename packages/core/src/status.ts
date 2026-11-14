@@ -42,10 +42,10 @@ export interface Workspace {
   /** Owned; ResolvedItem.program points into these. */
   snapshots: RepoSnapshot[];
   items: ResolvedItem[];
-  unknownRefs: { repo: string; hash: string; refRepo: string; refId: string }[];
-  duplicates: { repo: string; id: string; paths: string[] }[];
+  unknownRefs: { repo: string; repoPath: string; hash: string; refRepo: string; refId: string }[];
+  duplicates: { repo: string; repoPath: string; id: string; paths: string[] }[];
   /** A bare repository name in a Task line that matches several repositories (resolves nowhere). */
-  ambiguousRepoRefs: { repo: string; hash: string; refRepo: string }[];
+  ambiguousRepoRefs: { repo: string; repoPath: string; hash: string; refRepo: string }[];
   /** repoPath -> that repository's ids, for findItem / findDependency. */
   itemIndex: Map<string, RepoItemIndex>;
 }
@@ -175,7 +175,7 @@ export function resolveAll(snapshots: RepoSnapshot[], mode: UnverifiedMode): Wor
         }
       }
     }
-    for (const k of dupOrder) w.duplicates.push({ repo: s.repo.name, id: w.items[k].item.id, paths: paths.get(k)! });
+    for (const k of dupOrder) w.duplicates.push({ repo: s.repo.name, repoPath: s.repo.path, id: w.items[k].item.id, paths: paths.get(k)! });
     for (const b of s.branches) {
       for (const p of b.programs) {
         for (const t of p.items) if (index.clash(p.format, t.id) === undefined) add(p, t, true);
@@ -199,7 +199,7 @@ export function resolveAll(snapshots: RepoSnapshot[], mode: UnverifiedMode): Wor
             const key = [ri, c.hash, fold(ref.repo)].join('\n');
             if (!seenAmbiguous.has(key)) {
               seenAmbiguous.add(key);
-              w.ambiguousRepoRefs.push({ repo: s.repo.name, hash: c.hash, refRepo: ref.repo });
+              w.ambiguousRepoRefs.push({ repo: s.repo.name, repoPath: s.repo.path, hash: c.hash, refRepo: ref.repo });
             }
             return;
           }
@@ -210,7 +210,7 @@ export function resolveAll(snapshots: RepoSnapshot[], mode: UnverifiedMode): Wor
           const key = [ri, c.hash, ref.repo, ref.id].join('\n');
           if (!seenUnknown.has(key)) {
             seenUnknown.add(key);
-            w.unknownRefs.push({ repo: s.repo.name, hash: c.hash, refRepo: ref.repo, refId: ref.id });
+            w.unknownRefs.push({ repo: s.repo.name, repoPath: s.repo.path, hash: c.hash, refRepo: ref.repo, refId: ref.id });
           }
           return;
         }

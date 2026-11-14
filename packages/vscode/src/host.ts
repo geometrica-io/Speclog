@@ -412,7 +412,7 @@ export class SpeclogHost implements vscode.Disposable {
         this.ui.view = 'program';
         this.rebuild();
       }
-      const node = this.tree && findRepoNode(this.tree, repo, s.workspace.snapshots);
+      const node = this.tree && findRepoNode(this.tree, repo);
       if (!node) {
         void vscode.window.showInformationMessage(vscode.l10n.t('Speclog: the repository is hidden by the filter.'));
         this.saveUi();

@@ -154,12 +154,17 @@ function lastSegments(path: string): string {
   return path.split(/[\\/]+/).filter((s) => s !== '').slice(-2).join('/');
 }
 
+/** Key of a repository node in the program view (unique per clone). */
+export function repoNodeKey(repoPath: string): string {
+  return `p/${repoPath}`;
+}
+
 function buildProgram(ws: Workspace, f: Filter, root: TreeNode): void {
   const repos = new Map<string, TreeNode>(); // repoPath -> node
   const repoNode = (path: string, name: string): TreeNode => {
     let n = repos.get(path);
     if (!n) {
-      n = node(`p/${path}`, name);
+      n = node(repoNodeKey(path), name);
       repos.set(path, n);
       root.children.push(n);
     }
@@ -170,6 +175,8 @@ function buildProgram(ws: Workspace, f: Filter, root: TreeNode): void {
   }
   const formats = new Map<string, SourceFormat>(); // program node key -> format
   for (const r of ws.items) {
+    // A hidden repository gets no node, so it cannot add a location suffix to a shown one.
+    if (f.hiddenRepos.has(r.repoKey)) continue;
     const repo = repoNode(r.repoPath, r.repo);
     const progKey = `p/${r.repoPath}/${r.program.path}`;
     formats.set(progKey, r.program.format);

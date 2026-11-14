@@ -190,8 +190,6 @@ function handWrittenRows(w: Workspace, out: AttentionItem[]): void {
 
 export function computeAttention(ws: Workspace, cfg: AttentionConfig, fetch: FetchState[], nowUnix: number): AttentionItem[] {
   const out: AttentionItem[] = [];
-  /** Path of the first repository of that name (the workspace's unknown / duplicate records carry only names). */
-  const pathOfName = (name: string) => ws.snapshots.find((s) => s.repo.name === name)?.repo.path ?? name;
   for (const s of ws.snapshots) {
     if (s.error) out.push(row('gitError', s, '', s.error));
     else if (!s.hasTaskFiles) out.push(row('noTaskFiles', s, '', ''));
@@ -204,10 +202,10 @@ export function computeAttention(ws: Workspace, cfg: AttentionConfig, fetch: Fet
   }
   handWrittenRows(ws, out);
   for (const u of ws.unknownRefs) {
-    out.push(row('unknownRef', { name: u.repo, path: pathOfName(u.repo) }, u.hash, u.refRepo ? `${u.refRepo}:${u.refId}` : u.refId));
+    out.push(row('unknownRef', { name: u.repo, path: u.repoPath }, u.hash, u.refRepo ? `${u.refRepo}:${u.refId}` : u.refId));
   }
-  for (const d of ws.duplicates) out.push(row('duplicateId', { name: d.repo, path: pathOfName(d.repo) }, d.id, d.paths.join(', ')));
-  for (const a of ws.ambiguousRepoRefs) out.push(row('ambiguousRepoRef', { name: a.repo, path: pathOfName(a.repo) }, a.hash, a.refRepo));
+  for (const d of ws.duplicates) out.push(row('duplicateId', { name: d.repo, path: d.repoPath }, d.id, d.paths.join(', ')));
+  for (const a of ws.ambiguousRepoRefs) out.push(row('ambiguousRepoRef', { name: a.repo, path: a.repoPath }, a.hash, a.refRepo));
   for (const f of fetch) {
     if (f.firstFailUnix === 0 || nowUnix - f.firstFailUnix <= cfg.fetchFailSeconds || f.lastOkUnix >= f.firstFailUnix) continue;
     const s = ws.snapshots.find((x) => x.repo.path === f.repo || x.repo.key === f.repo || x.repo.name === f.repo);
