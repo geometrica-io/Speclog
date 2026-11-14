@@ -113,9 +113,11 @@ closing commit; both are already in the snapshot.
 
 ### 5.2 Template
 
-Setting `speclog.agent.promptTemplate` (string; empty = built-in). Placeholders such as `{repo}`, `{id}`,
-`{title}`, `{repoPath}`, `{file}`, `{line}`, `{note}`, `{depends}`, `{spec}`, `{closingRules}`. Unknown
+Setting `speclog.agent.promptTemplate` (string; empty = built-in). Placeholders: `{repo}`, `{repoPath}`,
+`{id}`, `{title}`, `{status}`, `{size}`, `{priority}`, `{area}`, `{file}`, `{line}`, `{branch}`,
+`{workBranch}`, `{note}`, `{evidence}`, `{depends}`, `{spec}`, `{closingRules}`, `{guards}`. Unknown
 placeholders are left as-is and listed once in a warning. `{branch}` is the source branch (§5.1a);
+`{workBranch}` is the branch to continue on (empty for items on main);
 `{guards}` holds the extra lines from §7 (empty when none apply). **With a custom template, guard lines
 are not appended automatically (my decision)** — appending text after a slash command could break it.
 If a guard applies and the template lacks `{guards}`, the confirmation dialog says the agent will not

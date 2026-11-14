@@ -3,6 +3,20 @@
 All notable changes to Speclog are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Send to agent: hand the selected item to a coding agent with a ready-made prompt (item, task file,
+  dependencies, spec and the `Task:` closing rule), through VS Code chat, a terminal running
+  `speclog.agent.terminalCommand`, or the clipboard (`speclog.agent.target`). Item row context menu,
+  property table button, and the commands **Send selected item to agent** and **Copy agent prompt**.
+- Confirmation before sending a pending decision, an item with open dependencies, work already on a
+  branch, or an unverified done; done and dropped items cannot be sent.
+- `speclog.agent.promptTemplate` for a custom prompt with placeholders.
+- On Windows, `.cmd` / `.bat` launchers and long prompts get the prompt through a file in Speclog's own
+  storage (deleted after 7 days). Nothing is written into a repository, and nothing about sent items is
+  stored.
+
 ## [0.1.0] - Unreleased
 
 ### Added
