@@ -21,10 +21,10 @@
   "config.unverifiedDone.done": "Shown as done, flagged and listed under Attention.",
   "config.unverifiedDone.open": "The file's done is ignored.",
   "config.agent.target": "Where **Send to agent** delivers an item's prompt.",
-  "config.agent.target.auto": "VS Code chat when this editor has it and the repository is open in this window, else the clipboard.",
-  "config.agent.target.chat": "VS Code chat, pre-filled and not sent; the clipboard when this editor has no chat or the repository is not open in this window.",
+  "config.agent.target.auto": "VS Code chat (the prompt is also copied to the clipboard) when this editor has it and the repository is open in this window, else the clipboard.",
+  "config.agent.target.chat": "VS Code chat, pre-filled and not sent, and the prompt is also copied to the clipboard; only the clipboard when this editor has no chat or the repository is not open in this window.",
   "config.agent.target.terminal": "A new terminal in the repository runs the agent command (speclog.agent.terminalCommand) with the prompt as its last argument.",
   "config.agent.target.clipboard": "The prompt is copied; paste it into any agent.",
-  "config.agent.terminalCommand": "The agent command of the `terminal` target: the executable first, then fixed arguments (for example `[\"claude\", \"--model\", \"opus\"]`). The prompt is appended as one argument, with no shell in between. For a `.cmd` / `.bat` launcher, or a prompt over 4,000 characters, the argument is `Read the task in <file> and follow it.` and the prompt is written to a file in Speclog's own storage (deleted after 7 days).",
+  "config.agent.terminalCommand": "The agent command of the `terminal` target: the executable first, then fixed arguments (for example `[\"claude\", \"--model\", \"opus\"]`). The executable is a name found on PATH or an absolute path; a relative path is refused. The prompt is appended as one argument, with no shell in between. A `.cmd` / `.bat` launcher on Windows, or any prompt over 4,000 characters, gets the prompt through a file: the argument is `Read the task in <file> and follow it.` and the prompt is written to a file in Speclog's own storage (deleted after 7 days).",
   "config.agent.promptTemplate": "A custom prompt; empty uses the built-in one. Placeholders: `{repo}`, `{repoPath}`, `{id}`, `{title}`, `{status}`, `{size}`, `{priority}`, `{area}`, `{file}`, `{line}`, `{branch}`, `{workBranch}`, `{note}`, `{evidence}`, `{depends}`, `{spec}`, `{closingRules}`, `{guards}`. Guard lines are not added to a custom template unless it has `{guards}`."
 }

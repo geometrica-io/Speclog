@@ -16,3 +16,11 @@ describe('package.nls.json', () => {
     expect(Object.keys(nls).filter((k) => !used.has(k))).toEqual([]);
   });
 });
+
+describe('settings', () => {
+  it('the agent command is a per-machine setting (machine-overridable)', () => {
+    const props = (JSON.parse(pkgText) as { contributes: { configuration: { properties: Record<string, { scope?: string }> } } })
+      .contributes.configuration.properties;
+    expect(props['speclog.agent.terminalCommand'].scope).toBe('machine-overridable');
+  });
+});

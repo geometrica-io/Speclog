@@ -138,7 +138,7 @@ async function agentTests(api: SpeclogApi): Promise<void> {
 
   const da1 = await detailsOf(a1);
   assert.strictEqual(da1.details.agent.enabled, false, 'a done item cannot be sent');
-  assert.ok(da1.details.agent.reason !== '', 'with a reason');
+  assert.strictEqual(da1.details.agent.reason, 'The item is already done.', 'with a reason worded by the host');
   const db1 = await detailsOf(b1);
   assert.strictEqual(db1.details.agent.enabled, true, 'an open item can be sent');
   const note = db1.details.note;
@@ -182,6 +182,13 @@ async function agentTests(api: SpeclogApi): Promise<void> {
   assert.strictEqual(await send(b1), 'refused');
   assert.strictEqual(speclogTerminals().length, before, 'no terminal without the command');
   console.log('ok - a missing agent command is reported');
+
+  for (const bad of [['./bin/agent'], [], [''], 'claude']) {
+    await setAgent('terminalCommand', bad);
+    assert.strictEqual(await send(b1), 'refused', `terminalCommand ${JSON.stringify(bad)} is refused`);
+    assert.strictEqual(speclogTerminals().length, before, 'no terminal for an invalid command');
+  }
+  console.log('ok - a relative, empty or malformed terminalCommand is refused, never defaulted');
 
   const node = nodeOnPath();
   if (!node) {

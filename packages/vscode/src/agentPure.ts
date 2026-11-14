@@ -37,13 +37,41 @@ export function isInsideWorkspace(repoPath: string, folders: string[], platform:
   });
 }
 
+/** True when cmd names a file by a relative path (has a separator, or a drive without a root on win32). */
+function isRelativePath(cmd: string, platform: NodeJS.Platform): boolean {
+  const p = pathApi(platform);
+  const pathLike = cmd.includes('/') || cmd.includes(p.sep) || (platform === 'win32' && cmd.includes(':'));
+  return pathLike && !p.isAbsolute(cmd);
+}
+
+export type TerminalCommandProblem = 'notList' | 'empty' | 'noExecutable' | 'relativePath';
+
+export type TerminalCommandCheck =
+  | { ok: true; command: string[] }
+  | { ok: false; problem: TerminalCommandProblem; value: string };
+
+/**
+ * Validates speclog.agent.terminalCommand: a list of strings whose first entry is a bare name (looked up
+ * on PATH) or an absolute path. Relative paths are refused, never resolved against a repository.
+ * Arguments are kept as written (an empty or spaced argument is valid).
+ */
+export function checkTerminalCommand(v: unknown, platform: NodeJS.Platform): TerminalCommandCheck {
+  if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) return { ok: false, problem: 'notList', value: '' };
+  const args = v as string[];
+  if (args.length === 0) return { ok: false, problem: 'empty', value: '' };
+  const exe = args[0].trim();
+  if (exe === '') return { ok: false, problem: 'noExecutable', value: '' };
+  if (isRelativePath(exe, platform)) return { ok: false, problem: 'relativePath', value: exe };
+  return { ok: true, command: [exe, ...args.slice(1)] };
+}
+
+/** An absolute path for cmd (a bare name looked up on the absolute PATH entries, or an absolute path), else undefined. */
 export function resolveExecutable(
   cmd: string,
   envPath: string,
   pathExt: string,
   platform: NodeJS.Platform,
   exists: (p: string) => boolean,
-  cwd?: string,
 ): string | undefined {
   if (!cmd) return undefined;
   const p = pathApi(platform);
@@ -59,14 +87,13 @@ export function resolveExecutable(
   const hasExt = win && exts.includes(p.extname(cmd).toLowerCase());
   const variants = (base: string): string[] => (!win || hasExt ? [base] : exts.map((e) => base + e));
 
-  if (cmd.includes('/') || cmd.includes(p.sep)) {
-    const target = cwd && !p.isAbsolute(cmd) ? p.resolve(cwd, cmd) : cmd;
-    return variants(target).find(exists);
-  }
+  if (p.isAbsolute(cmd)) return variants(cmd).find(exists);
+  if (isRelativePath(cmd, platform)) return undefined;
+  // Relative PATH entries (".", "node_modules\.bin") are skipped: they would depend on the working folder.
   const dirs = envPath
     .split(win ? ';' : ':')
     .map((d) => d.trim().replace(/^"(.*)"$/, '$1'))
-    .filter(Boolean);
+    .filter((d) => d !== '' && p.isAbsolute(d));
   for (const dir of dirs) {
     const found = variants(p.join(dir, cmd)).find(exists);
     if (found) return found;

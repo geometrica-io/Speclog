@@ -5,6 +5,7 @@ import {
   needsPromptFile,
   promptFileName,
   resolveDelivery,
+  checkTerminalCommand,
   resolveExecutable,
   staleFiles,
   type AgentTarget,
@@ -120,13 +121,15 @@ describe('round 1 fixes', () => {
       'C:\\bin\\python3.11.exe',
     );
   });
-  it('resolves a relative path against cwd', () => {
-    expect(
-      resolveExecutable('.\\bin\\claude', '', EXT, 'win32', (p) => p === 'C:\\repo\\bin\\claude.cmd', 'C:\\repo'),
-    ).toBe('C:\\repo\\bin\\claude.cmd');
-    expect(resolveExecutable('./bin/claude', '', '', 'linux', (p) => p === '/r/bin/claude', '/r')).toBe(
-      '/r/bin/claude',
-    );
+  it('never resolves a relative path (not against the repository either)', () => {
+    expect(resolveExecutable('.\\bin\\claude', 'C:\\repo', EXT, 'win32', () => true)).toBeUndefined();
+    expect(resolveExecutable('bin/claude', '/r', '', 'linux', () => true)).toBeUndefined();
+  });
+  it('skips relative PATH entries, so the result is always absolute', () => {
+    const all = () => true;
+    expect(resolveExecutable('claude', '.;node_modules\\.bin;C:\\npm', EXT, 'win32', all)).toBe('C:\\npm\\claude.com');
+    expect(resolveExecutable('claude', '.:node_modules/.bin:/usr/bin', '', 'linux', all)).toBe('/usr/bin/claude');
+    expect(resolveExecutable('claude', '.;bin', EXT, 'win32', all)).toBeUndefined();
   });
   it('strips quotes, skips empty PATH entries and defaults PATHEXT on win32', () => {
     expect(resolveExecutable('claude', ';"C:\\q";', '', 'win32', (p) => p === 'C:\\q\\claude.cmd')).toBe(
@@ -151,5 +154,27 @@ describe('round 1 fixes', () => {
     const now = 100 * 86_400_000;
     expect(staleFiles([{ name: 'a', mtimeMs: now - week }], now)).toEqual([]);
     expect(staleFiles([{ name: 'b', mtimeMs: now - week - 1 }], now)).toEqual(['b']);
+  });
+});
+
+describe('checkTerminalCommand', () => {
+  it('accepts a bare name or an absolute path, with arguments kept as written', () => {
+    expect(checkTerminalCommand(['claude'], 'win32')).toEqual({ ok: true, command: ['claude'] });
+    expect(checkTerminalCommand([' claude ', '--model', '', 'a b'], 'linux')).toEqual({ ok: true, command: ['claude', '--model', '', 'a b'] });
+    expect(checkTerminalCommand(['C:\\tools\\claude.exe'], 'win32')).toEqual({ ok: true, command: ['C:\\tools\\claude.exe'] });
+    expect(checkTerminalCommand(['/opt/claude'], 'linux')).toEqual({ ok: true, command: ['/opt/claude'] });
+  });
+  it('refuses what is not a list of strings, an empty list and an empty executable', () => {
+    expect(checkTerminalCommand('claude', 'linux')).toEqual({ ok: false, problem: 'notList', value: '' });
+    expect(checkTerminalCommand(['claude', 3], 'linux')).toEqual({ ok: false, problem: 'notList', value: '' });
+    expect(checkTerminalCommand([], 'linux')).toEqual({ ok: false, problem: 'empty', value: '' });
+    expect(checkTerminalCommand([''], 'linux')).toEqual({ ok: false, problem: 'noExecutable', value: '' });
+    expect(checkTerminalCommand(['  ', '--x'], 'linux')).toEqual({ ok: false, problem: 'noExecutable', value: '' });
+  });
+  it('refuses a relative path with a separator', () => {
+    for (const [cmd, platform] of [['./bin/claude', 'linux'], ['bin/claude', 'linux'], ['.\\bin\\claude', 'win32'],
+      ['tools/claude.cmd', 'win32'], ['C:claude.exe', 'win32']] as const) {
+      expect(checkTerminalCommand([cmd], platform)).toEqual({ ok: false, problem: 'relativePath', value: cmd });
+    }
   });
 });

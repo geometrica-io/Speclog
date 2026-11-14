@@ -8,10 +8,11 @@ import {
   AgentPrompt, ResolvedItem, Workspace, agentAvailability, applyPreset, buildAgentPrompt, buildTree,
 } from '@speclog/core';
 import {
-  PROMPT_FILE_ARG, isInsideWorkspace, needsPromptFile, promptFileName, resolveDelivery, resolveExecutable, staleFiles,
+  PROMPT_FILE_ARG, TerminalCommandCheck, isInsideWorkspace, needsPromptFile, promptFileName, resolveDelivery, resolveExecutable, staleFiles,
 } from './agentPure';
 import { findNode } from './dto';
 import { readAgentConfig } from './settings';
+import { agentBlockText, agentGuardText } from './strings';
 
 export type SendResult = 'sent' | 'cancelled' | 'refused';
 
@@ -30,22 +31,37 @@ function usableItem(w: Workspace, key: string): ResolvedItem | undefined {
     void vscode.window.showInformationMessage(vscode.l10n.t('Speclog: the item no longer exists.'));
     return undefined;
   }
-  const a = agentAvailability(w, r);
-  if (!a.enabled) {
-    void vscode.window.showInformationMessage(vscode.l10n.t('Speclog: {0} cannot be sent to an agent: {1}', r.item.id, a.reason));
+  const { block } = agentAvailability(w, r);
+  if (block) {
+    void vscode.window.showInformationMessage(vscode.l10n.t('Speclog: {0} cannot be sent to an agent: {1}', r.item.id, agentBlockText(block)));
     return undefined;
   }
   return r;
 }
 
-function buildPrompt(w: Workspace, r: ResolvedItem, template: string): AgentPrompt {
-  const p = buildAgentPrompt(w, r, template);
-  if (p.unknownPlaceholders.length > 0) {
-    void vscode.window.showWarningMessage(vscode.l10n.t(
-      'Speclog: the prompt template has unknown placeholders, left as written: {0}',
-      p.unknownPlaceholders.map((n) => `{${n}}`).join(', ')));
+/** Warns about unknown template placeholders; called only once the prompt is really used. */
+function warnUnknownPlaceholders(p: AgentPrompt): void {
+  if (p.unknownPlaceholders.length === 0) return;
+  void vscode.window.showWarningMessage(vscode.l10n.t(
+    'Speclog: the prompt template has unknown placeholders, left as written: {0}',
+    p.unknownPlaceholders.map((n) => `{${n}}`).join(', ')));
+}
+
+const TERMINAL_COMMAND_SETTING = 'speclog.agent.terminalCommand';
+
+/** Why the terminalCommand setting cannot be used, naming the setting. */
+function terminalCommandProblem(c: Extract<TerminalCommandCheck, { ok: false }>): string {
+  switch (c.problem) {
+    case 'notList': return vscode.l10n.t(
+      'Speclog: {0} must be a list of strings, the executable first; nothing was sent.', TERMINAL_COMMAND_SETTING);
+    case 'empty': return vscode.l10n.t(
+      'Speclog: {0} is empty; set the executable as its first entry. Nothing was sent.', TERMINAL_COMMAND_SETTING);
+    case 'noExecutable': return vscode.l10n.t(
+      'Speclog: the first entry of {0} (the executable) is empty; nothing was sent.', TERMINAL_COMMAND_SETTING);
+    case 'relativePath': return vscode.l10n.t(
+      'Speclog: the executable in {0} must be a name found on PATH or an absolute path, not the relative path "{1}"; nothing was sent.',
+      TERMINAL_COMMAND_SETTING, c.value);
   }
-  return p;
 }
 
 function workspaceFolders(): string[] {
@@ -62,6 +78,19 @@ function isFile(p: string): boolean {
 
 function promptDir(ctx: vscode.ExtensionContext): string {
   return vscode.Uri.joinPath(ctx.globalStorageUri, 'prompts').fsPath;
+}
+
+/** Pre-fills VS Code chat and also copies the prompt, in case no agent answers in that chat. */
+async function toChat(r: ResolvedItem, text: string): Promise<void> {
+  try {
+    await vscode.commands.executeCommand(CHAT_COMMAND, { query: text, isPartialQuery: true });
+  } catch {
+    await copied(r, text, false);
+    return;
+  }
+  await vscode.env.clipboard.writeText(text);
+  void vscode.window.showInformationMessage(vscode.l10n.t(
+    'Prompt for {0} is in the chat input, not sent; it is also copied to the clipboard.', r.item.id));
 }
 
 async function copied(r: ResolvedItem, text: string, openWindow: boolean): Promise<void> {
@@ -83,7 +112,7 @@ async function copied(r: ResolvedItem, text: string, openWindow: boolean): Promi
 
 async function toTerminal(ctx: vscode.ExtensionContext, r: ResolvedItem, text: string, command: string[]): Promise<SendResult> {
   const [cmd, ...fixedArgs] = command;
-  const exe = resolveExecutable(cmd, process.env.PATH ?? '', process.env.PATHEXT ?? '', process.platform, isFile, r.repoPath);
+  const exe = resolveExecutable(cmd, process.env.PATH ?? '', process.env.PATHEXT ?? '', process.platform, isFile);
   if (!exe) {
     void vscode.window.showErrorMessage(vscode.l10n.t('Agent command "{0}" was not found on PATH.', cmd));
     return 'refused';
@@ -117,9 +146,17 @@ export async function sendToAgent(ctx: vscode.ExtensionContext, w: Workspace, ke
   if (!r) return 'refused';
   const config = readAgentConfig();
   const { guards } = agentAvailability(w, r);
-  const prompt = buildPrompt(w, r, config.promptTemplate);
+  const prompt = buildAgentPrompt(w, r, config.promptTemplate);
+  const chatAvailable = (await vscode.commands.getCommands(true)).includes(CHAT_COMMAND);
+  const inWorkspace = isInsideWorkspace(r.repoPath, workspaceFolders(), process.platform);
+  const delivery = resolveDelivery(config.target, chatAvailable, inWorkspace);
+  // A broken terminalCommand is reported before any confirmation, and never replaced by a default.
+  if (delivery === 'terminal' && !config.terminalCommand.ok) {
+    void vscode.window.showWarningMessage(terminalCommandProblem(config.terminalCommand));
+    return 'refused';
+  }
   if (guards.length > 0) {
-    const lines = guards.map((g) => g.message);
+    const lines = guards.map(agentGuardText);
     if (prompt.guardsOmitted) {
       lines.push(vscode.l10n.t('The prompt template has no {0} placeholder, so the agent will not receive the stop-and-ask line.', '{guards}'));
     }
@@ -128,19 +165,15 @@ export async function sendToAgent(ctx: vscode.ExtensionContext, w: Workspace, ke
       { modal: true, detail: lines.join('\n') }, go);
     if (pick !== go) return 'cancelled';
   }
+  // Unknown placeholders are reported only once the user goes ahead.
+  warnUnknownPlaceholders(prompt);
   const { text } = prompt;
-  const chatAvailable = (await vscode.commands.getCommands(true)).includes(CHAT_COMMAND);
-  const inWorkspace = isInsideWorkspace(r.repoPath, workspaceFolders(), process.platform);
-  switch (resolveDelivery(config.target, chatAvailable, inWorkspace)) {
+  switch (delivery) {
     case 'chat':
-      try {
-        await vscode.commands.executeCommand(CHAT_COMMAND, { query: text, isPartialQuery: true });
-      } catch {
-        await copied(r, text, false);
-      }
+      await toChat(r, text);
       return 'sent';
     case 'terminal':
-      return toTerminal(ctx, r, text, config.terminalCommand);
+      return toTerminal(ctx, r, text, config.terminalCommand.ok ? config.terminalCommand.command : []);
     case 'clipboard':
       await copied(r, text, false);
       return 'sent';
@@ -154,8 +187,9 @@ export async function sendToAgent(ctx: vscode.ExtensionContext, w: Workspace, ke
 export async function copyAgentPrompt(w: Workspace, key: string): Promise<void> {
   const r = usableItem(w, key);
   if (!r) return;
-  const { text } = buildPrompt(w, r, readAgentConfig().promptTemplate);
-  await copied(r, text, false);
+  const prompt = buildAgentPrompt(w, r, readAgentConfig().promptTemplate);
+  warnUnknownPlaceholders(prompt);
+  await copied(r, prompt.text, false);
 }
 
 /** Deletes prompt files older than 7 days (on activation); failures are ignored. */

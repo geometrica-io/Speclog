@@ -41,7 +41,7 @@ describe('agentAvailability', () => {
     for (const st of ['done', 'dropped'] as Status[]) {
       const a = agentAvailability(w, resolved(w, s, { status: st }));
       expect(a.enabled).toBe(false);
-      expect(a.reason).toContain(st);
+      expect(a.block).toEqual({ kind: 'closed', status: st });
     }
   });
 
@@ -49,14 +49,14 @@ describe('agentAvailability', () => {
     const { w, s } = setup([item('A.1')], 'fatal: x');
     const a = agentAvailability(w, resolved(w, s));
     expect(a.enabled).toBe(false);
-    expect(a.reason).toContain('fatal: x');
+    expect(a.block).toEqual({ kind: 'gitError', error: 'fatal: x' });
   });
 
   it('unscanned repository is disabled', () => {
     const { w, s } = setup([item('A.1')]);
     const a = agentAvailability(w, resolved(w, s, { repoPath: '/elsewhere' }));
     expect(a.enabled).toBe(false);
-    expect(a.reason).toBe('Repository not scanned yet.');
+    expect(a.block).toEqual({ kind: 'notScanned' });
   });
 
   it('dropped dependency counts as closed', () => {
@@ -70,7 +70,7 @@ describe('agentAvailability', () => {
     for (const st of ['open', 'partial', 'bug', 'verify'] as Status[]) {
       const a = agentAvailability(w, resolved(w, s, { status: st }));
       expect(a.enabled).toBe(true);
-      expect(a.reason).toBe('');
+      expect(a.block).toBeUndefined();
       expect(a.guards.length).toBe(0);
     }
   });
@@ -88,24 +88,24 @@ describe('agentAvailability', () => {
     const r = w.items.find((x) => x.item.id === 'A.0')!;
     const a = agentAvailability(w, r);
     expect(a.guards.map((g) => g.kind)).toEqual(['openDepends']);
-    expect(a.guards[0].message).toContain('A.2');
-    expect(a.guards[0].message).not.toContain('A.1');
-    expect(a.guards[0].message).toContain('A.9 (not found)');
+    expect(a.guards[0]).toMatchObject({ depends: [{ id: 'A.2', found: true }, { id: 'A.9', found: false }] });
+    expect(a.guards[0].promptLine).toContain('A.2, A.9 (not found)');
+    expect(a.guards[0].promptLine).not.toContain('A.1');
   });
 
   it('onBranch names the branch', () => {
     const { w, s } = setup([item('A.1')]);
     const a = agentAvailability(w, resolved(w, s, { status: 'onBranch', branches: ['feature/x'] }));
     expect(a.guards.map((g) => g.kind)).toEqual(['onBranch']);
-    expect(a.guards[0].message).toContain('feature/x');
-    expect(a.guards[0].promptLine).toContain('feature/x');
+    expect(a.guards[0]).toMatchObject({ branches: ['feature/x'] });
+    expect(a.guards[0].promptLine).toContain('on branch feature/x;');
   });
 
   it('unverified adds a guard', () => {
     const { w, s } = setup([item('A.1')]);
     const a = agentAvailability(w, resolved(w, s, { status: 'unverified' }));
     expect(a.guards.map((g) => g.kind)).toEqual(['unverified']);
-    expect(a.guards[0].message).toContain('no evidence in git');
+    expect(a.guards[0].promptLine).toContain('no evidence in git');
   });
 
   it('guards combine in order', () => {
@@ -115,6 +115,17 @@ describe('agentAvailability', () => {
     expect(a.guards.map((g) => g.kind)).toEqual(['decision', 'openDepends']);
     const b = agentAvailability(w, { ...r, status: 'onBranch', branches: ['f/x'] });
     expect(b.guards.map((g) => g.kind)).toEqual(['openDepends', 'onBranch']);
+  });
+
+  it('dependencies are looked up in the same clone, not by repository name', () => {
+    // Two clones of one origin share the name R; A.1 is done in the first and open in the second.
+    const a = snap([prog([item('A.1', 'done')])]);
+    const b = snap([prog([item('A.0', 'open', ['A.1']), item('A.1', 'open')])]);
+    b.repo = { ...b.repo, path: '/r2/R', key: '/r2/R' };
+    const w = resolveAll([a, b], 'unverified');
+    const r = w.items.find((x) => x.repoPath === '/r2/R' && x.item.id === 'A.0')!;
+    expect(agentAvailability(w, r).guards.map((g) => g.kind)).toEqual(['openDepends']);
+    expect(buildAgentPrompt(w, r, '{depends}').text).toBe('A.1 (open)');
   });
 });
 
@@ -166,6 +177,17 @@ describe('buildAgentPrompt', () => {
     expect(closingRules('docsTasks', 'T1')).not.toContain('[x]');
   });
 
+  it('only docs/tasks gets the never-write-done and docs/tasks follow-up rules', () => {
+    for (const f of ['backlogMd', 'specKit'] as const) {
+      const t = closingRules(f, 'T1');
+      expect(t).toContain('Task-Progress: T1');
+      expect(t).not.toContain('Never write');
+      expect(t).not.toContain('docs/tasks');
+    }
+    expect(closingRules('docsTasks', 'T1')).toContain('Never write "status: done"');
+    expect(closingRules('docsTasks', 'T1')).toContain('docs/tasks/');
+  });
+
   it('spec line only when a spec exists', () => {
     const a = mk();
     expect(buildAgentPrompt(a.w, a.r, '').text).not.toContain('Spec:');
@@ -179,13 +201,21 @@ describe('buildAgentPrompt', () => {
     expect(buildAgentPrompt(w, r, '{depends}').text).toBe('A.1 (done), A.2 (open)');
   });
 
-  it('branch-only item cites its branch', () => {
-    const { w, s } = mk();
+  it('new item on a branch with no Task: commit names that branch', () => {
+    // As resolveAll produces it: branch-only, onBranch, and no closing branches.
+    const s = snap([prog([item('A.1')])]);
     const bp = prog([item('B.1')]);
     s.branches.push({ tip: { name: 'feature/y', ref: 'refs/heads/feature/y', hash: 'h', date: '' }, programs: [bp], commits: [] });
-    const t = buildAgentPrompt(w, resolved(w, s, { program: bp, item: bp.items[0], branchOnly: true }), '').text;
+    const w = resolveAll([s], 'unverified');
+    const r = w.items.find((x) => x.item.id === 'B.1')!;
+    expect(r).toMatchObject({ branchOnly: true, status: 'onBranch', branches: [] });
+    const g = agentAvailability(w, r).guards.find((x) => x.kind === 'onBranch')!;
+    expect(g).toMatchObject({ branches: ['feature/y'] });
+    expect(g.promptLine).toContain('on branch feature/y;');
+    const t = buildAgentPrompt(w, r, '').text;
     expect(t).toContain('feature/y:docs/tasks/');
     expect(t).toContain('Continue on branch feature/y');
+    expect(t).not.toContain('branch .');
   });
 
   it('branch-only item without a known branch omits the branch cleanly', () => {

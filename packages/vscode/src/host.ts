@@ -17,7 +17,7 @@ import { FILTER_PRESETS } from './protocol';
 import type { DetailsDto, FilterPreset, HostToWebview, Status, WebviewToHost } from './protocol';
 import { SECTION, readEngineConfig } from './settings';
 import { SpeclogStatusBar } from './statusBar';
-import { translateCoreLabel, webviewStrings } from './strings';
+import { agentBlockText, translateCoreLabel, webviewStrings } from './strings';
 import { summarize } from './summary';
 import {
   COALESCE_MS, MAX_KEYS, PersistedUi, isKey, isStr, isView, num, readHiddenRepos, readTrustCommits, readUi,
@@ -298,7 +298,7 @@ export class SpeclogHost implements vscode.Disposable {
         const p = resolveInRepo(r.repoPath, r.item.spec);
         specState = !p ? 'outside' : fs.existsSync(p) && fs.statSync(p).isFile() ? 'ok' : 'missing';
       }
-      return itemDetails(s.workspace, r, key, specState);
+      return itemDetails(s.workspace, r, key, specState, agentBlockText);
     }
     // Counts and the by-status breakdown come from the unfiltered tree.
     return branchSummary((full && findNode(full, key)) ?? n, translateCoreLabel);
