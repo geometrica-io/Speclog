@@ -129,6 +129,8 @@ repository without an `origin` remote is never fetched and has no fetch state.
 Speclog never shows a credential prompt or window: git runs with `GIT_TERMINAL_PROMPT=0`,
 `GCM_INTERACTIVE=never` and `credential.interactive=false`, and ssh runs with `BatchMode=yes`. Without
 stored credentials the fetch simply fails, quietly, and the board keeps showing the last known state.
+When you set `GIT_SSH_COMMAND`, `GIT_SSH` or `core.sshCommand` yourself, Speclog does not override it,
+so that command must not prompt (for example, add `-o BatchMode=yes`).
 
 When a fetch fails, the fetch indicator in the top bar turns red and its tooltip lists each repository's
 error. If a repository's fetch keeps failing for an hour, it gets a "Fetch failing" row in Attention.
@@ -162,6 +164,7 @@ unchanged.
 - v1.x: reports (weekly / monthly / range; HTML, PDF, Markdown export).
 - v2: GitHub sign-in and lightweight clone of selected repositories.
 - v2: a `speclog` CLI and an MCP server for agents.
+- Later: open a commit in VS Code's git view from the property table (v1 copies its hash).
 
 ## Contributing
 

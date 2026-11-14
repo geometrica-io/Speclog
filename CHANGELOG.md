@@ -19,3 +19,6 @@ All notable changes to Speclog are documented here. The format follows
   trusting task files.
 - Status bar summary, activity bar view, light / dark / high contrast themes, keyboard navigation.
 - Runs in local, WSL, SSH and container workspaces (`extensionKind: workspace`).
+
+### Not yet
+- Clicking a commit copies its hash; opening it in VS Code's git view is planned for a later version.

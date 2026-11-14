@@ -144,7 +144,9 @@ Backlog.md version range is the range the builder tested, stated in the README.
 
 Every PM §7 kind (stale branch, untagged work commit, evidence conflict, unknown ID, format issues,
 duplicate ID, repository without task files, manual `done` after `.since`, fetch failure, git error)
-+ the two kinds in §4.5.
++ the two kinds in §4.5. An untagged work commit is one that changes a file outside `docs/` and the task
+folders of the formats the repository uses (`backlog/`, `.backlog/`, `backlog.config.yml`, `specs/`); the
+shipped commit-msg hook exempts the same paths.
 
 ## 5. Screen (v1)
 
@@ -159,7 +161,7 @@ duplicate ID, repository without task files, manual `done` after `.since`, fetch
 - Colors and fonts come from the VS Code theme (`--vscode-*` variables); readable in light / dark / high
   contrast. Keyboard navigable.
 - The spec link and the task file open in VS Code (paths that stay inside the repository). Clicking a
-  commit copies its hash; opens in VS Code's built-in git view where available.
+  commit copies its hash. Opening the commit in VS Code's built-in git view is planned for later (§7).
 - Language: **English only** in v1. Strings go through VS Code `l10n` so translations can be added
   later without code changes.
 
@@ -168,11 +170,13 @@ duplicate ID, repository without task files, manual `done` after `.since`, fetch
 - Scanned repositories: workspace folders open in VS Code (that are a repository or have repositories
   as direct children) + direct children of folders in the `speclog.roots` setting (PM's `C:\Antigravity`
   behavior). `speclog.exclude` (folder names), `speclog.originFilter` (empty = all; e.g.
-  `github.com/ovasoft41/`). Worktrees whose `.git` is a file are not separate repositories.
+  `github.com/ovasoft41/`). Worktrees whose `.git` is a file are not separate repositories. Roots are
+  absolute paths (`~` expands to the home folder; relative entries are ignored).
 - Refresh: same as PM — ref/HEAD changes are watched, a changed repository is rescanned, the UI never
   freezes (scanning is asynchronous in the extension process; heavy work may move to a worker).
 - `speclog.fetch.enabled` (default on), `speclog.fetch.intervalSeconds` (300). Fetch only updates
-  `origin` remote refs; never touches the working tree.
+  `origin` remote refs; never touches the working tree. A repository without `origin` is never fetched
+  and shows no fetch state.
 - Settings in VS Code settings; UI state in `workspaceState`/`globalState`. Nothing is written to repositories.
 - **Repository name and key (my decision):** the repository name is the repo name in the `origin` URL
   (e.g. `StructuralFEASuite`); without `origin`, the folder name. `Task: <Name>:<id>` resolves by name,
@@ -197,7 +201,8 @@ duplicate ID, repository without task files, manual `done` after `.since`, fetch
   selection, lightweight clone (`--filter=blob:none`) of the selected ones into the extension's own storage.
 - **v2 Agents:** `speclog` CLI (npm) and an MCP server — same core; "what is open?", "what closed in
   this session?".
-- Later: advanced code evidence, agent session report, progress timeline, more formats (by adding adapters).
+- Later: open a commit in VS Code's built-in git view from the property table (v1 copies the hash),
+  advanced code evidence, agent session report, progress timeline, more formats (by adding adapters).
 
 ## 8. Architecture
 
