@@ -1,6 +1,7 @@
 // Launches VS Code (downloaded and cached in .vscode-test/) with the extension and a workspace of
 // two throwaway repositories, then runs smoke.test.ts inside it. Exit code 0 = passed.
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { runTests } from '@vscode/test-electron';
 import { TestRepo, makeTempDir, removeTree } from '../../core/test/helpers/testRepo';
@@ -34,6 +35,11 @@ async function main(): Promise<void> {
       folders: [{ path: alpha.dir }, { path: beta.dir }],
       settings: { 'speclog.fetch.enabled': false },
     }, null, 2));
+    // VS Code puts its IPC socket in the user-data folder, and macOS caps Unix socket paths at 104
+    // bytes, so the user data goes to a short folder; the repositories stay under the spaced,
+    // non-ASCII test path.
+    const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-'));
+    cleanups.push(() => removeTree(userData));
 
     // Set when this runs from a VS Code terminal or extension host; it would start VS Code as plain Node.
     delete process.env.ELECTRON_RUN_AS_NODE;
@@ -46,7 +52,7 @@ async function main(): Promise<void> {
         '--disable-workspace-trust',
         '--skip-welcome',
         '--skip-release-notes',
-        `--user-data-dir=${path.join(work, 'user-data')}`,
+        `--user-data-dir=${userData}`,
       ],
     });
     code = 0;
