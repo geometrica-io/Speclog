@@ -3,6 +3,7 @@
 import type { HostToWebview, Strings } from '../src/protocol';
 import { AttentionView } from './attention';
 import { h, post } from './dom';
+import { AgentMenu } from './menu';
 import { PropertiesView } from './properties';
 import { TopBar } from './topBar';
 import { TreeView } from './tree';
@@ -33,7 +34,11 @@ const tree = new TreeView({
     pendingToggles.set(key, open);
     post({ type: 'toggle', key, open });
   },
+  contextMenu(key, x, y) {
+    menu.show(key, x, y, tree.element);
+  },
 });
+const menu = new AgentMenu();
 const props = new PropertiesView();
 const attention = new AttentionView();
 const topBar = new TopBar({
@@ -55,7 +60,7 @@ const main = h('div', { class: 'main' }, treePane, vsplit, propsPane);
 const hsplit = h('div', { class: 'splitter horizontal', attrs: { 'role': 'separator', 'aria-orientation': 'horizontal', 'tabindex': '0' } });
 const attentionPane = h('div', { class: 'pane attention-pane' }, attention.element);
 const app = document.getElementById('app')!;
-app.append(topBar.element, main, hsplit, attentionPane);
+app.append(topBar.element, main, hsplit, attentionPane, menu.element);
 
 function clampHeight(v: number): number {
   const max = Math.max(MIN_PANE_PX, app.clientHeight - topBar.element.offsetHeight - MIN_PANE_PX);
@@ -152,6 +157,7 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       topBar.setStrings(S);
       tree.setStrings(S);
       props.setStrings(S);
+      menu.setStrings(S);
       attention.setStrings(S);
       if (state) renderState(state);
       else tree.setData({ key: 'root', label: '', kind: 'root', done: 0, total: 0, children: [] }, [], '', 'program', false, S['tree.scanning']);
@@ -170,6 +176,7 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       break;
     case 'details':
       if (m.key === selectedKey || m.key === '') props.setDetails(m.details);
+      menu.setDetails(m.details);
       break;
   }
 });

@@ -2,7 +2,8 @@
 // Row elements are recycled by slot and their content is rebuilt only when it changed, so a click
 // that coincides with a state message or a scroll frame still lands on a live element.
 // Keyboard: Up/Down move, Right opens / goes to the first child, Left closes / goes to the parent,
-// Home/End/PageUp/PageDown, Enter or Space selects (focus alone never selects).
+// Home/End/PageUp/PageDown, Enter or Space selects (focus alone never selects). A right click, the
+// context-menu key or Shift+F10 on an item row selects it and asks for its context menu.
 import type { Strings, TreeNodeDto, ViewMode } from '../src/protocol';
 import { STATUS_ORDER } from '../src/protocol';
 import { h } from './dom';
@@ -14,6 +15,8 @@ const INDENT_PX = 16;
 export interface TreeCallbacks {
   select(key: string): void;
   toggle(key: string, open: boolean): void;
+  /** An item row's context menu at (x, y), viewport pixels; the row is already selected. */
+  contextMenu(key: string, x: number, y: number): void;
 }
 
 /** A recycled row element and the content it currently shows. */
@@ -45,6 +48,7 @@ export class TreeView {
     this.element.addEventListener('click', (e) => this.onClick(e));
     this.element.addEventListener('dblclick', (e) => this.onDoubleClick(e));
     this.element.addEventListener('keydown', (e) => this.onKey(e));
+    this.element.addEventListener('contextmenu', (e) => this.onContextMenu(e));
     this.element.addEventListener('focus', () => {
       if (this.pointerFocus) {
         this.pointerFocus = false;
@@ -232,6 +236,24 @@ export class TreeView {
       return;
     }
     this.select(i);
+  }
+
+  /** Item rows only: other rows keep the default menu. The keyboard menu (target: the tree) uses the focused row. */
+  private onContextMenu(e: MouseEvent): void {
+    const fromRow = this.rowIndexOf(e);
+    const i = fromRow >= 0 ? fromRow : (e.target === this.element ? this.indexOf(this.focusKey) : -1);
+    if (i < 0 || this.rows[i].node.kind !== 'item') return;
+    e.preventDefault();
+    this.focusKey = this.rows[i].key;
+    this.select(i);
+    let x = e.clientX, y = e.clientY;
+    if (fromRow < 0) {
+      // No scrolling here: a scroll closes the menu. The menu clamps itself into the viewport.
+      const top = this.element.getBoundingClientRect().top + i * this.rowH - this.element.scrollTop;
+      x = this.element.getBoundingClientRect().left + 24;
+      y = top + this.rowH;
+    }
+    this.cb.contextMenu(this.rows[i].key, x, y);
   }
 
   private onDoubleClick(e: MouseEvent): void {

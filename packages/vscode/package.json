@@ -98,6 +98,16 @@
         "command": "speclog.untrustTaskFiles",
         "title": "%command.untrustTaskFiles%",
         "category": "Speclog"
+      },
+      {
+        "command": "speclog.sendToAgent",
+        "title": "%command.sendToAgent%",
+        "category": "Speclog"
+      },
+      {
+        "command": "speclog.copyAgentPrompt",
+        "title": "%command.copyAgentPrompt%",
+        "category": "Speclog"
       }
     ],
     "configuration": {
@@ -158,6 +168,40 @@
           ],
           "default": "unverified",
           "markdownDescription": "%config.unverifiedDone%"
+        },
+        "speclog.agent.target": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "chat",
+            "terminal",
+            "clipboard"
+          ],
+          "enumDescriptions": [
+            "%config.agent.target.auto%",
+            "%config.agent.target.chat%",
+            "%config.agent.target.terminal%",
+            "%config.agent.target.clipboard%"
+          ],
+          "default": "auto",
+          "markdownDescription": "%config.agent.target%"
+        },
+        "speclog.agent.terminalCommand": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "default": [
+            "claude"
+          ],
+          "markdownDescription": "%config.agent.terminalCommand%"
+        },
+        "speclog.agent.promptTemplate": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "markdownDescription": "%config.agent.promptTemplate%"
         }
       }
     }

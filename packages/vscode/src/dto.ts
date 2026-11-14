@@ -2,7 +2,7 @@
 // tree keys are opaque, so nodes are found by comparing keys or node.item, never by parsing.
 import {
   ALL_STATUSES, AttentionItem, Filter, NO_AREA_KEY, NO_DATE_KEY, ResolvedItem, Status, TreeNode,
-  Workspace, findDependency, repoNodeKey,
+  Workspace, agentAvailability, findDependency, repoNodeKey,
 } from '@speclog/core';
 import type {
   AttentionItemDto, BranchSummaryDto, FilterDto, ItemDetailsDto, Status as StatusDto, TreeNodeDto,
@@ -84,6 +84,7 @@ export function itemDetails(ws: Workspace, r: ResolvedItem, key: string, specSta
     const conflict = r.status !== 'dropped' && (evidence.expectPresent ? evidence.found !== done : evidence.found === done);
     evidenceResult = { found: evidence.found, conflict };
   }
+  const agent = agentAvailability(ws, r);
   return {
     kind: 'item', key, repo: r.repo, repoPath: r.repoPath, repoKey: r.repoKey, id: t.id, title: t.title, status: r.status,
     branchOnly: r.branchOnly, historical: r.historical, trustedFromFile: r.trustedFromFile, flaggedUnverified: r.flaggedUnverified,
@@ -97,6 +98,7 @@ export function itemDetails(ws: Workspace, r: ResolvedItem, key: string, specSta
     spec: t.spec, specState, format: r.program.format, taskFile: r.program.path, taskFileLine: t.line,
     fileStatusText: t.fileStatusText, branches: [...r.branches], commits: r.commits.map((c) => ({ ...c })),
     doneDate: r.doneDate, historyDate: t.historyDate, historyCommit: t.historyCommit, evidence: t.evidence, evidenceResult,
+    agent: { enabled: agent.enabled, reason: agent.reason },
   };
 }
 

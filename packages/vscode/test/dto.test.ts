@@ -76,6 +76,14 @@ describe('dto', () => {
     expect(d.commits[0]).toMatchObject({ subject: 'Do A1', closes: true });
   }, T);
 
+  it('carries Send to agent availability: a done item is disabled with a reason, a bug item enabled', async () => {
+    const ws = await workspace();
+    const a1 = ws.items.find((r) => r.item.id === 'A1')!;
+    const a2 = ws.items.find((r) => r.item.id === 'A2')!;
+    expect(itemDetails(ws, a1, 'k', 'none').agent).toEqual({ enabled: false, reason: 'The item is already done.' });
+    expect(itemDetails(ws, a2, 'k', 'none').agent).toEqual({ enabled: true, reason: '' });
+  }, T);
+
   it('summarizes a branch by status from the unfiltered tree, with the oldest open item', async () => {
     const ws = await workspace();
     const full = buildTree(ws, 'program', applyPreset('all'));

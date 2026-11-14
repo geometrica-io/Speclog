@@ -1,4 +1,5 @@
 // The property table: label / value rows in collapsible groups (like Visual Studio's Properties window).
+// Its header holds the Send to agent button for an item.
 import type { DetailsDto, Strings } from '../src/protocol';
 import { clear, focusedId, h, post, refocus } from './dom';
 import { PropValue, formatDetails, statusClass, statusLabel } from './viewModel';
@@ -7,6 +8,8 @@ export class PropertiesView {
   readonly element: HTMLDivElement;
   private readonly body: HTMLDivElement;
   private readonly header: HTMLDivElement;
+  private readonly heading: HTMLSpanElement;
+  private readonly sendButton: HTMLButtonElement;
   /** Collapsed group titles; kept while the panel lives. */
   private readonly collapsed = new Set<string>();
   private S: Strings | null = null;
@@ -15,14 +18,22 @@ export class PropertiesView {
   private shown = '';
 
   constructor() {
-    this.header = h('div', { class: 'pane-header' });
+    this.heading = h('span', { class: 'pane-title' });
+    this.sendButton = h('button', { class: 'button small', attrs: { 'type': 'button' } });
+    this.sendButton.hidden = true;
+    this.sendButton.addEventListener('click', () => {
+      const d = this.details;
+      if (d?.kind === 'item' && d.agent.enabled) post({ type: 'sendToAgent', key: d.key });
+    });
+    this.header = h('div', { class: 'pane-header with-actions' }, this.heading, this.sendButton);
     this.body = h('div', { class: 'props-body' });
     this.element = h('div', { class: 'props' }, this.header, this.body);
   }
 
   setStrings(S: Strings): void {
     this.S = S;
-    this.header.textContent = S['props.title'];
+    this.heading.textContent = S['props.title'];
+    this.sendButton.textContent = S['agent.send'];
     this.render();
   }
 
@@ -34,7 +45,18 @@ export class PropertiesView {
     this.render();
   }
 
+  /** Shown for items only; aria-disabled (not disabled) keeps the reason tooltip reachable. */
+  private renderButton(): void {
+    const d = this.details;
+    this.sendButton.hidden = !this.S || d?.kind !== 'item';
+    if (d?.kind !== 'item') return;
+    this.sendButton.setAttribute('aria-disabled', String(!d.agent.enabled));
+    if (d.agent.reason) this.sendButton.title = d.agent.reason;
+    else this.sendButton.removeAttribute('title');
+  }
+
   private render(): void {
+    this.renderButton();
     const focus = focusedId(this.body);
     clear(this.body);
     const S = this.S;

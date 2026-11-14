@@ -1,5 +1,7 @@
-// Command registrations: open / refresh, the commit-msg hook installer and the per-repository trust cutoff.
+// Command registrations: open / refresh, the commit-msg hook installer, the per-repository trust cutoff and
+// Send to agent.
 import * as vscode from 'vscode';
+import { SendResult, copyAgentPrompt, sendToAgent } from './agent';
 import { HookError, hooksPathOf, installHook, resolveCommit } from './hook';
 import type { SpeclogHost } from './host';
 
@@ -70,12 +72,43 @@ async function untrustCommand(host: SpeclogHost, key: unknown): Promise<void> {
   void vscode.window.showInformationMessage(vscode.l10n.t('Speclog: no longer trusting task files in {0}.', repo.name));
 }
 
-export function registerCommands(host: SpeclogHost): vscode.Disposable[] {
+/** The tree key from the argument (panel), else the panel's selection (command palette); "" when none. */
+function agentKey(host: SpeclogHost, key: unknown): string {
+  return typeof key === 'string' ? key : host.selectedItemKey;
+}
+
+function selectFirst(): void {
+  void vscode.window.showInformationMessage(vscode.l10n.t('Speclog: select an item in the Speclog panel first.'));
+}
+
+async function sendCommand(ctx: vscode.ExtensionContext, host: SpeclogHost, arg: unknown): Promise<SendResult> {
+  const key = agentKey(host, arg);
+  const w = host.workspace;
+  if (!w || key === '') {
+    selectFirst();
+    return 'refused';
+  }
+  return sendToAgent(ctx, w, key);
+}
+
+async function copyPromptCommand(host: SpeclogHost, arg: unknown): Promise<void> {
+  const key = agentKey(host, arg);
+  const w = host.workspace;
+  if (!w || key === '') {
+    selectFirst();
+    return;
+  }
+  await copyAgentPrompt(w, key);
+}
+
+export function registerCommands(ctx: vscode.ExtensionContext, host: SpeclogHost): vscode.Disposable[] {
   return [
     vscode.commands.registerCommand('speclog.open', () => host.open()),
     vscode.commands.registerCommand('speclog.refresh', () => host.refresh()),
     vscode.commands.registerCommand('speclog.installHook', (key?: unknown) => installHookCommand(host, key)),
     vscode.commands.registerCommand('speclog.trustTaskFiles', (key?: unknown) => trustCommand(host, key)),
     vscode.commands.registerCommand('speclog.untrustTaskFiles', (key?: unknown) => untrustCommand(host, key)),
+    vscode.commands.registerCommand('speclog.sendToAgent', (key?: unknown) => sendCommand(ctx, host, key)),
+    vscode.commands.registerCommand('speclog.copyAgentPrompt', (key?: unknown) => copyPromptCommand(host, key)),
   ];
 }

@@ -47,6 +47,7 @@ export class SpeclogHost implements vscode.Disposable {
   private ready = false;
   private everReady = false;
   private last: StateMessage | undefined;
+  private lastDetailsMsg: Extract<HostToWebview, { type: 'details' }> | undefined;
   private ui: PersistedUi;
   private search = '';
   private tree: TreeNode | undefined;
@@ -158,6 +159,21 @@ export class SpeclogHost implements vscode.Disposable {
     this.postState(false);
   }
 
+  /** The current scan result; undefined before the first one. */
+  get workspace(): EngineState['workspace'] | undefined {
+    return this.state?.workspace;
+  }
+
+  /** The item key selected in the current view; "" when nothing or a repository / program / group is selected. */
+  get selectedItemKey(): string {
+    const key = this.ui.selected[this.ui.view];
+    if (key === '') return '';
+    const full = this.full();
+    const n = (this.tree && findNode(this.tree, key)) ?? (full && findNode(full, key));
+    // A key no longer in the tree is passed on, so the send reports the item as gone.
+    return !n || n.item ? key : '';
+  }
+
   /** Test hooks. */
   get statusText(): string {
     return this.statusBar.text;
@@ -167,6 +183,13 @@ export class SpeclogHost implements vscode.Disposable {
   }
   get lastPosted(): HostToWebview | undefined {
     return this.last;
+  }
+  get lastDetails(): HostToWebview | undefined {
+    return this.lastDetailsMsg;
+  }
+  /** Handles a message as if the webview had sent it. */
+  receive(m: unknown): Promise<void> {
+    return this.onMessage(m);
   }
   /** The webview script ran (under the CSP) and asked for its data. */
   get webviewReady(): boolean {
@@ -284,7 +307,8 @@ export class SpeclogHost implements vscode.Disposable {
   private postDetails(): void {
     if (!this.ready) return;
     const key = this.ui.selected[this.ui.view];
-    this.send({ type: 'details', key, details: this.details(key) });
+    this.lastDetailsMsg = { type: 'details', key, details: this.details(key) };
+    this.send(this.lastDetailsMsg);
   }
 
   private send(msg: HostToWebview): void {
@@ -380,6 +404,10 @@ export class SpeclogHost implements vscode.Disposable {
         if (!isStr(m.text)) return;
         await vscode.env.clipboard.writeText(m.text.slice(0, 1000));
         vscode.window.setStatusBarMessage(vscode.l10n.t('Copied {0}', m.text.slice(0, 12)), 2000);
+        break;
+      case 'sendToAgent':
+        // The command re-resolves the key in the current workspace.
+        if (isKey(m.key)) await vscode.commands.executeCommand('speclog.sendToAgent', m.key);
         break;
       case 'jump':
         if (isKey(m.repo) && isKey(m.id)) this.jump(m.repo, m.id);

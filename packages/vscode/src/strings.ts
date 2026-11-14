@@ -76,6 +76,7 @@ export function webviewStrings(): Strings {
     'row.done': vscode.l10n.t('Done'),
     'row.progress': vscode.l10n.t('Progress'),
     'row.item': vscode.l10n.t('Item'),
+    'agent.send': vscode.l10n.t('Send to agent'),
     'note.branchOnly': vscode.l10n.t('new item on a branch'),
     'note.history': vscode.l10n.t('history'),
     'note.trusted': vscode.l10n.t('from file'),
