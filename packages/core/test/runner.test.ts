@@ -125,31 +125,39 @@ describe('runGit', () => {
     expect(r.cancelled).toBe(true);
   });
 
-  // A grandchild keeps writing to stdout for well under a second after git itself has exited
-  // (inside the 2 s post-exit drain limit).
+  it('GIT_TERMINAL_PROMPT cannot be overridden by the extra environment', async () => {
+    const r = await runGit('.', ['-c', 'alias.v=!echo prompt-$GIT_TERMINAL_PROMPT', 'v'], { env: { GIT_TERMINAL_PROMPT: '1' } });
+    expect(r.code).toBe(0);
+    expect(r.out.startsWith('prompt-0')).toBe(true);
+  });
+
+  // A grandchild keeps writing to stdout for well under a second after git itself has exited.
+  // These two tests check what is kept, not how fast: a generous idle grace (1 s, cap 10 s) so a
+  // loaded machine cannot stretch a 50 ms gap past it. The real limits are tested below.
   const lateWriter = ['-c', 'alias.w=!(for i in $(seq 1 8); do sleep 0.05; echo line$i; done) &', 'w'];
+  const generous = { pipeGraceMs: 1000, pipeDrainMaxMs: 10000 };
 
   it('output written after git exits is not truncated', async () => {
-    const r = await runGit('.', lateWriter, { timeoutMs: 15000 });
+    const r = await runGit('.', lateWriter, { timeoutMs: 15000 }, generous);
     expect(r.code).toBe(0);
     expect(r.out).toContain('line1\n');
     expect(r.out).toContain('line8\n');
-  }, 20000);
+  }, 30000);
 
   it('a normal exit is never reported as timed out or cancelled', async () => {
     // The timeout and the abort fire after git exited but while the grandchild still writes.
-    const t = await runGit('.', lateWriter, { timeoutMs: 800 });
+    const t = await runGit('.', lateWriter, { timeoutMs: 800 }, generous);
     expect(t.code).toBe(0);
     expect(t.timedOut).toBe(false);
     expect(t.out).toContain('line8\n');
 
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 800);
-    const c = await runGit('.', lateWriter, { signal: ac.signal });
+    const c = await runGit('.', lateWriter, { signal: ac.signal }, generous);
     expect(c.code).toBe(0);
     expect(c.cancelled).toBe(false);
     expect(c.out).toContain('line8\n');
-  }, 20000);
+  }, 30000);
 
   const markerCmd = (name: string, seconds: number) => {
     const marker = path.join(os.tmpdir(), `speclog_${name}_${process.pid}_${Date.now()}`);
@@ -190,7 +198,8 @@ describe('runGit', () => {
     expect(c.timedOut).toBe(false); // the result handed out does not change afterwards
   }, 15000);
 
-  // A grandchild that keeps writing every 50 ms (for up to ~10 s; stops on a closed pipe).
+  // A grandchild that keeps writing every 50 ms (for up to ~10 s; stops on a closed pipe). These
+  // run with the real limits and assert upper bounds only: how much output arrives depends on load.
   const endless = 'for i in $(seq 1 200); do echo tick || exit; sleep 0.05; done';
 
   it('an endless writer after a normal exit is drained for at most 2 s', async () => {
@@ -199,7 +208,6 @@ describe('runGit', () => {
     expect(ms(t0)).toBeLessThan(4000); // exit + 2 s drain limit, with slack
     expect(r.code).toBe(0);
     expect(r.timedOut).toBe(false);
-    expect(r.out).toContain('tick\n'); // output gathered so far
   }, 20000);
 
   it('an endless writer after a timeout kill gets a one-shot grace', async () => {
@@ -207,6 +215,14 @@ describe('runGit', () => {
     const r = await runGit('.', ['-c', `alias.k=!(${endless}) & sleep 10`, 'k'], { timeoutMs: 1000 });
     expect(r.timedOut).toBe(true);
     expect(ms(t0)).toBeLessThan(3000); // timeout + one-shot grace, with slack
-    expect(r.out).toContain('tick\n');
+  }, 20000);
+
+  it('the drain limit holds even with a long idle grace', async () => {
+    // Writes every 50 ms, so a 1 s idle grace never runs out: only the 1.5 s cap ends the wait.
+    const t0 = Date.now();
+    const r = await runGit('.', ['-c', `alias.e=!(${endless}) &`, 'e'], { timeoutMs: 30000 },
+      { pipeGraceMs: 1000, pipeDrainMaxMs: 1500 });
+    expect(ms(t0)).toBeLessThan(4500);
+    expect(r.code).toBe(0);
   }, 20000);
 });

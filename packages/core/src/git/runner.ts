@@ -25,6 +25,12 @@ const DEFAULT_TIMEOUT_MS = 120000;
 const PIPE_GRACE_MS = 200;
 const PIPE_DRAIN_MAX_MS = 2000;
 
+/**
+ * Internal test seam (not exported from the package): overrides the pipe-drain limits so tests
+ * that check what output is kept do not depend on machine load.
+ */
+export interface RunnerTuning { pipeGraceMs?: number; pipeDrainMaxMs?: number; }
+
 function killTree(pid: number | undefined): void {
   if (pid === undefined) return;
   try {
@@ -42,11 +48,13 @@ function killTree(pid: number | undefined): void {
  * Runs `git <args>` with cwd = repoDir (never rejects). GIT_TERMINAL_PROMPT=0, no window.
  * timeoutMs < 0: no limit. Timeout/abort kill git and its whole process tree (an abort with
  * survivesCancel only stops waiting). The timeout is a timer of this process: it does not
- * survive this process exiting.
+ * survive this process exiting. tuning: tests only.
  */
-export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): Promise<GitResult> {
+export function runGit(repoDir: string, args: string[], opts: GitOptions = {}, tuning: RunnerTuning = {}): Promise<GitResult> {
   const result: GitResult = { code: -1, out: '', err: '', launched: false, timedOut: false, cancelled: false };
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const graceMs = tuning.pipeGraceMs ?? PIPE_GRACE_MS;
+  const drainMaxMs = tuning.pipeDrainMaxMs ?? PIPE_DRAIN_MAX_MS;
 
   if (opts.signal?.aborted) {
     result.cancelled = true;
@@ -59,7 +67,8 @@ export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): 
     try {
       child = spawn('git', args, {
         cwd: repoDir,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...opts.env },
+        // GIT_TERMINAL_PROMPT last: no caller can turn prompting back on.
+        env: { ...process.env, ...opts.env, GIT_TERMINAL_PROMPT: '0' },
         windowsHide: true,
         // POSIX: own process group, so the whole tree can be killed. Windows: outside the
         // kill-on-close job Node puts children in, so the child outlives this process.
@@ -120,7 +129,7 @@ export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): 
     /** (Re)starts the grace period: finish once the pipes have been idle for PIPE_GRACE_MS. */
     const armGrace = (): void => {
       if (graceTimer) clearTimeout(graceTimer);
-      graceTimer = setTimeout(finish, PIPE_GRACE_MS);
+      graceTimer = setTimeout(finish, graceMs);
     };
 
     const stop = (): void => {
@@ -166,7 +175,7 @@ export function runGit(repoDir: string, args: string[], opts: GitOptions = {}): 
       if (!finished && !killed) {
         idleDrain = true;
         armGrace();
-        drainCap = setTimeout(finish, PIPE_DRAIN_MAX_MS);
+        drainCap = setTimeout(finish, drainMaxMs);
       }
     });
     child.on('close', (code) => {
