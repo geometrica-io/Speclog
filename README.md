@@ -105,6 +105,8 @@ code (files outside `docs/` and the task folders of the formats the repository u
 line, items whose file status contradicts git (done in the file with no commit; closed in git but still
 open in the file), unknown IDs in `Task:` lines, duplicate IDs, format issues, repositories without
 task files, manual `done` after the cutoff, uncommitted task changes, fetch failures and git errors.
+The commit-msg hook exempts every format's task folders in every repository, so in a repository that
+does not use Backlog.md a commit touching only `backlog/` gets no hook warning but is listed here.
 
 ## Settings
 

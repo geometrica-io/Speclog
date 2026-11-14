@@ -145,8 +145,10 @@ Backlog.md version range is the range the builder tested, stated in the README.
 Every PM §7 kind (stale branch, untagged work commit, evidence conflict, unknown ID, format issues,
 duplicate ID, repository without task files, manual `done` after `.since`, fetch failure, git error)
 + the two kinds in §4.5. An untagged work commit is one that changes a file outside `docs/` and the task
-folders of the formats the repository uses (`backlog/`, `.backlog/`, `backlog.config.yml`, `specs/`); the
-shipped commit-msg hook exempts the same paths.
+folders of the formats the repository uses (`backlog/`, `.backlog/`, `backlog.config.yml`, `specs/`). The
+shipped commit-msg hook does not know the formats: it exempts the full shared list (`docs/` and every
+format's folders) in every repository. So in a repository that does not use Backlog.md, a commit that
+only touches `backlog/` gets no hook warning but is listed in Attention.
 
 ## 5. Screen (v1)
 
