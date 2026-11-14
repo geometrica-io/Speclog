@@ -304,6 +304,28 @@ describe('attention (PM port)', () => {
     expect(v[0].ref).toBe('side');
   });
 
+  it('untagged commit: task-file changes of the formats in use are not code', () => {
+    const make = (formats: SourceFormat[], files: string[]) => {
+      const s = repo();
+      s.formats = formats;
+      s.programs.push(prog([item('task-1')], 'backlogMd', 'backlog/tasks/task-1 - X.md'));
+      s.trustCommit = 'trust';
+      s.mainCommits.push(commit('new', '2026-11-09'));
+      s.changedFiles.set('new', files);
+      s.commitsAfterSince = new Set(['new']);
+      return count(run(one(s)), 'untaggedCommit');
+    };
+    expect(make(['backlogMd'], ['backlog/tasks/x.md'])).toBe(0);
+    expect(make(['backlogMd'], ['.backlog/tasks/x.md', 'backlog.config.yml'])).toBe(0);
+    expect(make(['backlogMd'], ['docs/notes.md'])).toBe(0); // docs/ stays exempt (PM parity)
+    expect(make(['backlogMd'], ['backlog/tasks/x.md', 'src/a.ts'])).toBe(1);
+    expect(make(['specKit'], ['specs/001-a/tasks.md', 'specs/001-a/plan.md'])).toBe(0);
+    // Only the formats the repository uses: backlog/ is code in a Spec Kit-only repository.
+    expect(make(['specKit'], ['backlog/tasks/x.md'])).toBe(1);
+    expect(make(['backlogMd'], ['backlogs/x.md'])).toBe(1);
+    expect(make(['backlogMd'], ['backlog.config.yml.bak'])).toBe(1);
+  });
+
   it('untagged commits older than recentDays are not listed', () => {
     const s = repoS12();
     s.sinceCommit = 'since';

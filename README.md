@@ -101,10 +101,10 @@ and manual-done checks start from there. **Speclog: Stop trusting task files** r
 ## Attention list
 
 The bottom panel lists what needs a look: stale branches with unmerged task work, commits that changed
-code without a `Task:` line, items whose file status contradicts git (done in the file with no commit;
-closed in git but still open in the file), unknown IDs in `Task:` lines, duplicate IDs, format issues,
-repositories without task files, manual `done` after the cutoff, uncommitted task changes, fetch
-failures and git errors.
+code (files outside `docs/` and the task folders of the formats the repository uses) without a `Task:`
+line, items whose file status contradicts git (done in the file with no commit; closed in git but still
+open in the file), unknown IDs in `Task:` lines, duplicate IDs, format issues, repositories without
+task files, manual `done` after the cutoff, uncommitted task changes, fetch failures and git errors.
 
 ## Settings
 

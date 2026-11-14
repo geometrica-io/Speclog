@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TestRepo } from '../../core/test/helpers/testRepo';
+import { TASK_PATHSPECS } from '@speclog/core';
 import { hookSourcePath, hooksPathOf, installHook } from '../src/hook';
 
 const repos: TestRepo[] = [];
@@ -197,5 +198,24 @@ describe('core.hooksPath', () => {
   it('hooksPathOf is empty when unset', async () => {
     const r = await newRepo('hook5');
     expect(await hooksPathOf(r.dir)).toBe('');
+  });
+});
+
+describe('hook exemptions', () => {
+  it('match the task pathspecs the core exempts from the untagged-commit check', () => {
+    const text = fs.readFileSync(hookSourcePath(), 'utf8');
+    const m = /grep -Evq '([^']+)'/.exec(text);
+    expect(m).not.toBeNull();
+    const hookPattern = m![1];
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, (c) => `\\${c}`);
+    const dirs = TASK_PATHSPECS.filter((p) => p.endsWith('/')).map((p) => esc(p.slice(0, -1)));
+    const files = TASK_PATHSPECS.filter((p) => !p.endsWith('/')).map((p) => `^${esc(p)}$`);
+    expect(hookPattern).toBe([`^(${dirs.join('|')})/`, ...files].join('|'));
+
+    const re = new RegExp(hookPattern);
+    for (const p of TASK_PATHSPECS) expect(re.test(p.endsWith('/') ? `${p}x.md` : p), p).toBe(true);
+    for (const p of ['src/a.ts', 'README.md', 'backlogs/x.md', 'specsx/a.md', 'backlog.config.yml.bak', 'x/docs/a.md']) {
+      expect(re.test(p), p).toBe(false);
+    }
   });
 });

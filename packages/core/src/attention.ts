@@ -1,5 +1,7 @@
 // Attention list: port of ProjectManager src/core/Attention.cpp, extended with the Backlog.md /
 // Spec Kit rows (spec §4.5-§4.6). Everything that threatens "the screen tells the truth" is listed here.
+import { ADAPTERS } from './adapters';
+import type { SourceFormat } from './model';
 import type { EvidenceResult, RepoSnapshot } from './snapshot';
 import { ResolvedItem, Workspace, findItem } from './status';
 import { daysBetween } from './text';
@@ -55,7 +57,32 @@ function row(kind: AttentionKind, s: RepoSnapshot | { name: string; path: string
   return { kind, repo, repoPath, ref, detail, line: 0, days: 0, expectPresent: false, found: false, code: '', count: 0, ...over };
 }
 
-const underDocs = (f: string) => f.startsWith('docs/');
+/** docs/ is never code (ProjectManager parity); a directory pathspec ends in "/", others name one file. */
+const DOCS = 'docs/';
+
+/** Drops duplicates and pathspecs inside another directory pathspec of the list. */
+function minimal(specs: string[]): string[] {
+  const out: string[] = [];
+  for (const p of specs) {
+    if (out.includes(p) || out.some((d) => d.endsWith('/') && p.startsWith(d))) continue;
+    out.push(p);
+  }
+  return out;
+}
+
+/**
+ * Every path that is task bookkeeping in some format: docs/ plus every adapter's pathspecs. The
+ * shipped commit-msg hook (packages/vscode/assets/hook/commit-msg) exempts exactly this list; a
+ * test keeps the two in step.
+ */
+export const TASK_PATHSPECS: readonly string[] = minimal([DOCS, ...ADAPTERS.flatMap((a) => a.pathspecs)]);
+
+/** docs/ plus the pathspecs of the formats a repository uses. */
+function taskPathspecs(formats: readonly SourceFormat[]): string[] {
+  return minimal([DOCS, ...ADAPTERS.filter((a) => formats.includes(a.format)).flatMap((a) => a.pathspecs)]);
+}
+
+const isUnder = (f: string, specs: readonly string[]) => specs.some((p) => (p.endsWith('/') ? f.startsWith(p) : f === p));
 
 /** One row per branch name: a local branch and its origin copy are the same branch. */
 function staleBranches(s: RepoSnapshot, cfg: AttentionConfig, out: AttentionItem[]): void {
@@ -88,13 +115,14 @@ function staleBranches(s: RepoSnapshot, cfg: AttentionConfig, out: AttentionItem
 /** Main commits after a cutoff (.since or trust), within cfg.recentDays, that carry no Task trailer. */
 function untaggedCommits(s: RepoSnapshot, cfg: AttentionConfig, out: AttentionItem[]): void {
   if (!s.sinceCommit && !s.trustCommit) return;
+  const exempt = taskPathspecs(s.formats);
   for (const c of s.mainCommits) {
     if (!s.commitsAfterSince.has(c.hash)) continue;
     if (daysBetween(c.date, cfg.today) > cfg.recentDays) continue;
     const files = s.changedFiles.get(c.hash);
     if (!files) continue;
     if (c.parents.length > 1 || c.refs.done.length > 0 || c.refs.progress.length > 0) continue;
-    if (files.some((p) => !underDocs(p))) out.push(row('untaggedCommit', s, c.hash, c.subject));
+    if (files.some((p) => !isUnder(p, exempt))) out.push(row('untaggedCommit', s, c.hash, c.subject));
   }
 }
 
