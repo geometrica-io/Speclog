@@ -198,6 +198,22 @@ describe('Backlog.md adapter', () => {
     ]);
   });
 
+  it('backlog root config: a trailing # comment on an unquoted value is not part of it', () => {
+    const files: SourceFile[] = [
+      { path: 'backlog.config.yml', text: 'project_name: Demo  # the demo\nbacklog_directory: backlog  # main\n' },
+      { path: 'backlog/tasks/task-1 - A.md', text: backlogTask('TASK-1', 'To Do') },
+    ];
+    const r = run(backlogMdAdapter, files);
+    expect(r.issues).toEqual([]);
+    expect(r.programs.map((p) => p.path)).toEqual(['backlog/']);
+    // Quoted: "#" is part of the value.
+    const q = run(backlogMdAdapter, [
+      { path: 'backlog.config.yml', text: 'project_name: "Demo"\nbacklog_directory: "backlog # x"\n' }, files[1],
+    ]);
+    expect(q.programs).toEqual([]);
+    expect(q.issues[0].detail).toContain('"backlog # x"');
+  });
+
   it('backlog alias-bomb front matter → one syntax issue, other tasks still read', () => {
     const bomb =
       '---\nid: TASK-50\ntitle: Bomb\nstatus: To Do\n' +

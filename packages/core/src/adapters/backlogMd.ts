@@ -1,6 +1,7 @@
 import { parseDocument } from 'yaml';
 import type { Item, ParseIssue, Program } from '../model';
 import { isValidDate } from '../text';
+import { sortedByPath } from './files';
 import type { SourceFile, TaskSourceAdapter } from './types';
 
 /**
@@ -166,7 +167,11 @@ function rootConfigMeta(text: string): { projectName: string; backlogDirectory: 
     const colon = line.indexOf(':');
     if (colon === -1) continue;
     const key = line.slice(0, colon).trim();
-    const value = line.slice(colon + 1).trim().replace(/^['"]|['"]$/g, '');
+    const rawValue = line.slice(colon + 1).trim();
+    // A quoted value keeps a "#"; an unquoted one ends at a " # comment".
+    const value = /^['"]/.test(rawValue)
+      ? rawValue.replace(/^['"]|['"]$/g, '')
+      : rawValue.replace(/\s+#.*$/, '');
     if ((key === 'project_name' || key === 'projectName') && value) projectName = value;
     else if (key === 'backlog_directory' || key === 'backlogDirectory') {
       backlogDirectory = value.replace(/^\.\//, '').replace(/\/+$/, '');
@@ -259,7 +264,7 @@ export const backlogMdAdapter: TaskSourceAdapter = {
     return paths.filter((p) => p === ROOT_CONFIG || classify(p) !== null);
   },
   parse(input: SourceFile[]) {
-    const files = [...input].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    const files = sortedByPath(input);
     const issues: ParseIssue[] = [];
     const inDir = (dir: string) => files.filter((f) => classify(f.path)?.dir === dir);
     const folderConfig = (own: SourceFile[], dir: string) =>
