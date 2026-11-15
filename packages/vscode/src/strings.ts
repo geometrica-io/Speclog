@@ -123,7 +123,7 @@ export function webviewStrings(): Strings {
     'detail.noTaskFiles': vscode.l10n.t('No task files on the main branch'),
     'detail.historyDoneAfterSince': vscode.l10n.t('status: done written after .since in {0}', P0),
     'detail.gitDoneFileOpen': vscode.l10n.t('A commit closes it; the file says {0}', P0),
-    'detail.unverifiedSummary': vscode.l10n.t('{0} items are done only in the task files, with no commit as evidence. Run "Speclog: Trust current task files" to accept them as done', P0),
+    'detail.unverifiedSummary': vscode.l10n.t('{0} items are done only in the task files, with no commit as evidence. Run "Speclog: Trust current task files" to trust these file statuses.', P0),
     'detail.uncommittedTaskChanges': vscode.l10n.t('Task files have uncommitted changes; the committed state is shown'),
     'detail.ambiguousRepoRef': vscode.l10n.t('"{0}" names several repositories', P0),
     'issue.syntax': vscode.l10n.t('Syntax error'),

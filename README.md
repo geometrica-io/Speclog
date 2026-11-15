@@ -106,8 +106,9 @@ and manual-done checks start from there. **Speclog: Stop trusting task files** r
 
 The bottom panel lists what needs a look: stale branches with unmerged task work, commits that changed
 code (files outside `docs/` and the task folders of the formats the repository uses) without a `Task:`
-line, items whose file status contradicts git (one summary row per repository for items done in the file
-with no commit, pointing at Speclog: Trust current task files; closed in git but still open in the file), unknown IDs in `Task:` lines, duplicate IDs, format issues, repositories without
+line, items whose file status contradicts git (closed in git but still open in the file), items done
+only in the file (one summary row per repository; see **Speclog: Trust current task files**), unknown
+IDs in `Task:` lines, duplicate IDs, format issues, repositories without
 task files, manual `done` after the cutoff, uncommitted task changes, fetch failures and git errors.
 The commit-msg hook exempts every format's task folders in every repository, so in a repository that
 does not use Backlog.md a commit touching only `backlog/` gets no hook warning but is listed here.

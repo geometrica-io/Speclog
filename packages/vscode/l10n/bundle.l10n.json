@@ -177,7 +177,7 @@
   "{0} (not found)": "{0} (not found)",
   "{0} / {1} shown": "{0} / {1} shown",
   "{0} days old; items: {1}": "{0} days old; items: {1}",
-  "{0} items are done only in the task files, with no commit as evidence. Run \"Speclog: Trust current task files\" to accept them as done": "{0} items are done only in the task files, with no commit as evidence. Run \"Speclog: Trust current task files\" to accept them as done",
+  "{0} items are done only in the task files, with no commit as evidence. Run \"Speclog: Trust current task files\" to trust these file statuses.": "{0} items are done only in the task files, with no commit as evidence. Run \"Speclog: Trust current task files\" to trust these file statuses.",
   "{0} repos · {1} items · {2} done": "{0} repos · {1} items · {2} done",
   "{0} unverified": "{0} unverified"
 }

@@ -124,9 +124,10 @@ Two Attention kinds:
   by this row.
 - **GitDoneFileOpen:** a closing commit on main, but the file still does not say done.
 
-In a repository that has never used `Task:` lines, every "Done" item is unverified on first open ("42
-items are done in the files of this repo but have no evidence in git — how to link them"), and the user can set a per-repository
-"trust file statuses before this point" cutoff (the `.since` equivalent; stored in Speclog settings, not
+In a repository that has never used `Task:` lines, every "Done" item is unverified on first open
+("42 items are done in the files of this repo but have no evidence in git — how to link them"), and
+the user can set a per-repository "trust file statuses before this point" cutoff (the `.since`
+equivalent; stored in Speclog settings, not
 written to files). Items done in the file before the cutoff show as **Done (from file)** and are not
 conflicts.
 
