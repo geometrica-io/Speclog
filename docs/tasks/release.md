@@ -7,6 +7,7 @@ created: 2026-11-14
 status: open
 size: S
 note: The Marketplace page links to the repository, issues and license; they 404 while it is private.
+evidence: github.com/geometrica-io/Speclog is public (2026-11-15); README images load from raw/HEAD
 
 ## REL.2 Add a screenshot to the README
 status: open
