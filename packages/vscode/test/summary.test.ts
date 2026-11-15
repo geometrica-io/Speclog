@@ -38,7 +38,7 @@ describe('summarize', () => {
   }, T);
 
   it('leaves unverified rows out of the Attention count', () => {
-    const s = summarize(state({ attention: [row('staleBranch'), row('unverifiedSummary'), row('fileDoneNoGit'), row('gitError')] }));
+    const s = summarize(state({ attention: [row('staleBranch'), row('unverifiedSummary'), row('gitError')] }));
     expect(s.attention).toBe(2);
     expect(s).toMatchObject({ repos: 0, done: 0, total: 0 });
   });

@@ -2,7 +2,7 @@
 import { AttentionKind, EngineState, buildTree, defaultFilter } from '@speclog/core';
 
 /** Rows counted as unverified items (`? <n>`), not as Attention (`⚠ <n>`). */
-const UNVERIFIED_KINDS: ReadonlySet<AttentionKind> = new Set<AttentionKind>(['unverifiedSummary', 'fileDoneNoGit']);
+const UNVERIFIED_KINDS: ReadonlySet<AttentionKind> = new Set<AttentionKind>(['unverifiedSummary']);
 
 export interface Summary {
   repos: number;

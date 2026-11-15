@@ -116,13 +116,16 @@ Setting `speclog.unverifiedDone`:
 - `"open"` — ignore the file's "done", show as open (strict mode).
 Does not affect the `docs/tasks` format (it has no unproven "done").
 
-Two new Attention kinds:
-- **FileDoneNoGit:** done in the file, but no closing commit on main.
+Two Attention kinds:
+- **UnverifiedSummary:** done in the file, but no closing commit on main. Shown as a single **summary
+  row** per repository, never one row per item (decision 2026-11-15: a Backlog.md / Spec Kit repository
+  without `Task:` lines had 637 rows). The row names the count and points at **Speclog: Trust current
+  task files**. The items keep their Unverified badge in the tree; in `"done"` mode they are also covered
+  by this row.
 - **GitDoneFileOpen:** a closing commit on main, but the file still does not say done.
 
-In a repository that has never used `Task:` lines, every "Done" item is FileDoneNoGit on first open. So
-this kind can also be shown as a single **summary row** per repository ("42 items are done in the files
-of this repo but have no evidence in git — how to link them") and the user can set a per-repository
+In a repository that has never used `Task:` lines, every "Done" item is unverified on first open ("42
+items are done in the files of this repo but have no evidence in git — how to link them"), and the user can set a per-repository
 "trust file statuses before this point" cutoff (the `.since` equivalent; stored in Speclog settings, not
 written to files). Items done in the file before the cutoff show as **Done (from file)** and are not
 conflicts.

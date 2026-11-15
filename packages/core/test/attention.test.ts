@@ -381,14 +381,13 @@ describe('attention (Speclog extras)', () => {
   const hand = (items: Item[], format: SourceFormat = 'backlogMd') => prog(items, format, 'backlog/tasks/x.md');
   const doneInFile = (id: string) => item(id, 'done', { fileDone: true, fileStatusText: 'Done' });
 
-  it('file done without git produces item rows and one summary per repo', () => {
+  it('file done without git produces one summary per repo and no per-item rows', () => {
     const s = repo();
     s.programs.push(hand([doneInFile('task-1'), doneInFile('task-2'), item('task-3')]));
     const other = repo('Q');
     other.programs.push(hand([item('task-9')]));
     const v = run(resolveAll([s, other], 'unverified'));
-    const rows = v.filter((a) => a.kind === 'fileDoneNoGit');
-    expect(rows.map((a) => [a.repo, a.ref, a.detail])).toEqual([['R', 'task-1', 'Done'], ['R', 'task-2', 'Done']]);
+    expect(v.map((a) => a.kind as string)).not.toContain('fileDoneNoGit');
     const sum = v.filter((a) => a.kind === 'unverifiedSummary');
     expect(sum.length).toBe(1);
     expect(sum[0].repo).toBe('R');
@@ -397,10 +396,10 @@ describe('attention (Speclog extras)', () => {
 
     // mode "done": still flagged
     const flagged = run(resolveAll([s], 'done'));
-    expect(count(flagged, 'fileDoneNoGit')).toBe(2);
+    expect(flagged.map((a) => a.kind as string)).not.toContain('fileDoneNoGit');
     expect(count(flagged, 'unverifiedSummary')).toBe(1);
     // mode "open": ignored
-    expect(count(run(resolveAll([s], 'open')), 'fileDoneNoGit')).toBe(0);
+    expect(count(run(resolveAll([s], 'open')), 'unverifiedSummary')).toBe(0);
   });
 
   it('git done but file open is reported', () => {

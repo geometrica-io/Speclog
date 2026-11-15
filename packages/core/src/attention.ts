@@ -8,12 +8,12 @@ import { daysBetween } from './text';
 
 export type AttentionKind = 'staleBranch' | 'untaggedCommit' | 'evidenceConflict' | 'unknownRef' | 'formatIssue' |
   'duplicateId' | 'noTaskFiles' | 'historyDoneAfterSince' | 'fetchFailing' | 'gitError' |
-  'fileDoneNoGit' | 'gitDoneFileOpen' | 'unverifiedSummary' | 'uncommittedTaskChanges' | 'ambiguousRepoRef';
+  'gitDoneFileOpen' | 'unverifiedSummary' | 'uncommittedTaskChanges' | 'ambiguousRepoRef';
 
 /** Output order of the kinds. */
 const KIND_ORDER: readonly AttentionKind[] = [
   'staleBranch', 'untaggedCommit', 'evidenceConflict', 'unknownRef', 'formatIssue', 'duplicateId', 'noTaskFiles',
-  'historyDoneAfterSince', 'fetchFailing', 'gitError', 'fileDoneNoGit', 'gitDoneFileOpen', 'unverifiedSummary',
+  'historyDoneAfterSince', 'fetchFailing', 'gitError', 'gitDoneFileOpen', 'unverifiedSummary',
   'uncommittedTaskChanges', 'ambiguousRepoRef',
 ];
 
@@ -177,7 +177,6 @@ function handWrittenRows(w: Workspace, out: AttentionItem[]): void {
   for (const r of w.items) {
     const who = { name: r.repo, path: r.repoPath };
     if (r.status === 'unverified' || r.flaggedUnverified) {
-      out.push(row('fileDoneNoGit', who, r.item.id, r.item.fileStatusText));
       const u = unverified.get(r.repoPath) ?? { s: who, n: 0 };
       u.n++;
       unverified.set(r.repoPath, u);
