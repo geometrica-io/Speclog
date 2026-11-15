@@ -67,6 +67,8 @@ export interface SnapshotOptions {
   signal?: AbortSignal;
   /** Per-file parse memo for this build (tests: to count parses); default: a new one per build. */
   parseCache?: ParseCache;
+  /** Opens the build's blob reader (tests: to watch it close); default: a new BlobReader. */
+  openBlobReader?: (repoPath: string, signal?: AbortSignal) => BlobReader;
 }
 
 const SINCE_FILE = 'docs/tasks/.since';
@@ -137,7 +139,7 @@ function dateOfDay(n: number): string {
  * ended when the build ends (also on error and cancel); each distinct file is parsed once.
  */
 export async function buildSnapshot(repo: RepoInfo, o: SnapshotOptions): Promise<RepoSnapshot> {
-  const reader = new BlobReader(repo.path, o.signal);
+  const reader = o.openBlobReader ? o.openBlobReader(repo.path, o.signal) : new BlobReader(repo.path, o.signal);
   try {
     return await build(repo, o, reader, o.parseCache ?? createParseCache());
   } finally {

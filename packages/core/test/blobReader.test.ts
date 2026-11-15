@@ -188,10 +188,11 @@ describe('BlobReader', () => {
   }, T);
 
   it('a read with no answer in time is a timeout and ends the process', async () => {
-    const r = await repo();
-    await r.commit('init', { 'big.md': 'z'.repeat(20_000_000) });
-    const reader = new BlobReader(r.dir, undefined, { timeoutMs: 1 });
-    const x = await reader.read('refs/heads/main:big.md');
+    // Fake cat-file: a header and part of the content, then it stalls.
+    const fake = "process.stdin.once('data', () => process.stdout.write('b'.repeat(40) + ' blob 9' + String.fromCharCode(10) + 'xyz'));"
+      + ' setInterval(() => undefined, 1000);';
+    const reader = new BlobReader('.', undefined, { timeoutMs: 300, command: process.execPath, args: ['-e', fake] });
+    const x = await reader.read('anything');
     const pid = reader.pid;
     expect(x).toEqual({ value: null, error: 'git cat-file: timed out' });
     await reader.close();
@@ -204,6 +205,79 @@ describe('BlobReader', () => {
     await reader.close();
     expect((await reader.read('HEAD:x')).error).toBe('git cat-file: closed');
   });
+
+  it('a read during or after close fails at once as closed', async () => {
+    const r = await repo();
+    await r.commit('init', { 'a.md': 'a' });
+    const reader = new BlobReader(r.dir);
+    expect((await reader.read('refs/heads/main:a.md')).value?.text).toBe('a');
+    const closing = reader.close();
+    expect(await reader.read('refs/heads/main:a.md')).toEqual({ value: null, error: 'git cat-file: closed' });
+    await closing;
+    expect(await reader.read('refs/heads/main:a.md')).toEqual({ value: null, error: 'git cat-file: closed' });
+  }, T);
+
+  it('a slow blob that keeps flowing is not a timeout', async () => {
+    // Fake cat-file: one answer of 20 bytes, one byte every 50 ms (1 s in all, timeout 400 ms).
+    const fake = [
+      "process.stdin.once('data', async () => {",
+      "  process.stdout.write('a'.repeat(40) + ' blob 20' + String.fromCharCode(10));",
+      '  for (let i = 0; i < 20; i++) { await new Promise((res) => setTimeout(res, 50)); process.stdout.write("x"); }',
+      '  process.stdout.write(String.fromCharCode(10));',
+      '});',
+      "process.stdin.on('end', () => process.exit(0));",
+    ].join('\n');
+    const reader = new BlobReader('.', undefined, { timeoutMs: 400, command: process.execPath, args: ['-e', fake] });
+    const x = await reader.read('anything');
+    await reader.close();
+    expect(x).toEqual({ value: { oid: 'a'.repeat(40), text: 'x'.repeat(20) }, error: '' });
+  }, T);
+});
+
+describe('snapshot reader lifetime', () => {
+  /** A reader factory for buildSnapshot that records each reader and whether close() was called. */
+  function tracking(onRead?: () => void) {
+    const opened: Array<{ reader: BlobReader; pid: () => number | undefined; closed: boolean }> = [];
+    const open = (dir: string, signal?: AbortSignal): BlobReader => {
+      const reader = new BlobReader(dir, signal);
+      const rec = { reader, pid: () => reader.pid, closed: false };
+      const read = reader.read.bind(reader);
+      const close = reader.close.bind(reader);
+      reader.read = async (spec: string) => {
+        const res = await read(spec);
+        onRead?.();
+        return res;
+      };
+      reader.close = async () => {
+        rec.closed = true;
+        await close();
+      };
+      opened.push(rec);
+      return reader;
+    };
+    return { opened, open };
+  }
+
+  it('buildSnapshot closes its reader when it finishes and when it is cancelled', async () => {
+    const r = await repo();
+    await r.commit('init', { 'backlog/tasks/task-1 - Item-1.md': backlogTask(1), 'backlog/tasks/task-2 - Item-2.md': backlogTask(2) });
+
+    const ok = tracking();
+    const s = await buildSnapshot(info(r), { today: today(), openBlobReader: ok.open });
+    expect(s.error).toBe('');
+    expect(ok.opened.length).toBe(1);
+    expect(ok.opened[0].closed).toBe(true);
+    expect(ok.opened[0].pid()).toBeDefined();
+    expect(isAlive(ok.opened[0].pid())).toBe(false);
+
+    const ac = new AbortController();
+    const cancel = tracking(() => ac.abort()); // cancelled right after the first blob is read
+    const c = await buildSnapshot(info(r), { today: today(), signal: ac.signal, openBlobReader: cancel.open });
+    expect(c.error).toBe('cancelled');
+    expect(cancel.opened.length).toBe(1);
+    expect(cancel.opened[0].closed).toBe(true);
+    expect(isAlive(cancel.opened[0].pid())).toBe(false);
+  }, T);
 });
 
 describe('parse cache', () => {

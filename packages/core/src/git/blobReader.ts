@@ -17,9 +17,9 @@ const HEADER_RE = /^([0-9a-fA-F]{40}|[0-9a-fA-F]{64}) (\S+) (\d+)$/;
 /**
  * Reads blobs by object id or `<rev>:<path>` through one `git cat-file --batch` process, started
  * on the first read. Same rules as runGit: GIT_TERMINAL_PROMPT=0, no window, the process tree is
- * killed on abort or timeout (no answer within timeoutMs while a read is pending, < 0: no limit).
+ * killed on abort or timeout (no output within timeoutMs while a read is pending, < 0: no limit).
  * read() never rejects; after git dies (or an abort) every pending and later read returns an
- * error. close() must be called when done (also on error and cancel).
+ * error. close() must be called when done (also on error and cancel); reads after it fail as closed.
  */
 export class BlobReader {
   private child: ChildProcess | undefined;
@@ -34,11 +34,19 @@ export class BlobReader {
   private watchdog: NodeJS.Timeout | undefined;
   private errTail = '';
   private readonly timeoutMs: number;
+  private readonly command: string;
+  private readonly args: string[];
+  /** close() was called: no new reads. */
+  private closing = false;
   private closeWaiters: Array<() => void> = [];
   private readonly onAbort = (): void => this.die('cancelled');
 
-  constructor(private readonly repo: string, private readonly signal?: AbortSignal, opts: { timeoutMs?: number } = {}) {
+  /** opts.command / opts.args: tests only (a fake cat-file); default git cat-file --batch. */
+  constructor(private readonly repo: string, private readonly signal?: AbortSignal,
+    opts: { timeoutMs?: number; command?: string; args?: string[] } = {}) {
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.command = opts.command ?? 'git';
+    this.args = opts.args ?? ['cat-file', '--batch'];
   }
 
   /** The git process id once started (tests). */
@@ -51,6 +59,7 @@ export class BlobReader {
   read(spec: string): Promise<RepoResult<Blob | null>> {
     if (this.signal?.aborted) this.die('cancelled');
     if (this.dead) return Promise.resolve(this.failed());
+    if (this.closing) return Promise.resolve({ value: null, error: 'git cat-file: closed' });
     // One request per line: a newline (or a trailing CR, which git strips) cannot be sent.
     if (spec === '' || spec.includes('\n') || spec.endsWith('\r')) return Promise.resolve({ value: null, error: '' });
     if (!this.child && !this.start()) return Promise.resolve(this.failed());
@@ -63,6 +72,7 @@ export class BlobReader {
 
   /** Ends the process: git exits on end of input; killed if it has not after a short wait. */
   close(): Promise<void> {
+    this.closing = true;
     if (!this.child || this.exited) {
       this.die('closed');
       return Promise.resolve();
@@ -90,7 +100,7 @@ export class BlobReader {
   private start(): boolean {
     let child: ChildProcess;
     try {
-      child = spawn('git', ['cat-file', '--batch'], {
+      child = spawn(this.command, this.args, {
         cwd: this.repo,
         env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
         windowsHide: true,
@@ -112,7 +122,7 @@ export class BlobReader {
     child.stderr?.on('data', (d: Buffer) => { this.errTail = (this.errTail + d.toString('utf8')).slice(-2000); });
     const ended = (code: number | null) => {
       const why = this.errTail.trim().split(/\r?\n/)[0] || `exit code ${code ?? -1}`;
-      this.die(why);
+      this.die(this.closing ? 'closed' : why);
     };
     child.on('exit', (code) => {
       this.exited = true;
@@ -129,7 +139,7 @@ export class BlobReader {
     return true;
   }
 
-  /** (Re)starts the no-progress timer while reads are pending. */
+  /** (Re)starts the no-progress timer while reads are pending (on each read, answer and output chunk). */
   private arm(): void {
     if (this.watchdog) clearTimeout(this.watchdog);
     this.watchdog = undefined;
@@ -139,6 +149,7 @@ export class BlobReader {
 
   private onData(d: Buffer): void {
     if (this.dead) return;
+    this.arm(); // output is flowing: a slow but moving blob is not a timeout
     this.chunks.push(d);
     this.buffered += d.length;
     while (this.buffered > 0 && !this.dead) {
@@ -172,8 +183,13 @@ export class BlobReader {
     return this.chunks[0] ?? Buffer.alloc(0);
   }
 
+  /**
+   * Keeps rest (a view of a buffer just consumed) buffered. A small remainder is copied, so the
+   * large buffer it views (a whole blob) can be released.
+   */
   private keep(rest: Buffer): void {
-    this.chunks = rest.length > 0 ? [rest] : [];
+    const copy = rest.length > 0 && rest.length * 2 < rest.buffer.byteLength;
+    this.chunks = rest.length > 0 ? [copy ? Buffer.from(rest) : rest] : [];
     this.buffered = rest.length;
   }
 

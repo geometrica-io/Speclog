@@ -229,7 +229,8 @@ export async function listTree(repo: string, ref: string, pathspecs: string[], s
 /**
  * Content of ref:path (UTF-8) through `git cat-file --batch`, which never stats the path (no
  * Windows path limit). value null when the blob cannot be read; a missing blob is not an error,
- * but git not starting, a timeout or a cancel is. Many reads: use one BlobReader.
+ * but git not starting, a timeout or a cancel is. Starts one cat-file process per call, so it is
+ * for single reads (tests, one-off lookups); snapshot building reads through one BlobReader.
  */
 export async function readBlob(repo: string, ref: string, path: string, signal?: AbortSignal): Promise<RepoResult<string | null>> {
   const reader = new BlobReader(repo, signal);
