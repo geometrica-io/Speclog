@@ -21,4 +21,9 @@ size: S
 ## RR.4 Acceptance on six public repositories
 status: open
 size: S
-depends: RR.1, RR.2, RR.3
+depends: RR.1, RR.2, RR.3, RR.5
+
+## RR.5 Address branches by tip hash
+status: bug
+size: S
+note: A ref name too long for a Windows path made git fail ("Filename too long"), and one such branch failed the whole repository's git log.

@@ -77,6 +77,14 @@ renders `fileDoneNoGit`), README Attention paragraph, spec Attention section.
 - Items keep their Unverified badge in the tree; nothing else changes.
 - Tests updated: no per-item rows; one summary row with the right count.
 
+### Task 5: Address branches by tip hash
+
+On Windows git fails with "Filename too long" when it resolves a very long ref name (for example
+`refs/remotes/origin/dependabot/docker/...` in raphaeltm/simple-agent-manager): `for-each-ref` lists it from
+packed-refs, but `rev-parse`/`log` stat the loose file. One such branch failed `git log --stdin` for the whole
+repository. Everywhere a branch is passed to git after `for-each-ref` (log revisions, `<rev>:<path>` blob
+requests, `ls-tree`), use the tip object id; the ref name stays only for display and keys.
+
 ### Task 4: Acceptance on the dogfood repositories
 
 - Re-run the scan of the six repositories (MrLesk/Backlog.md, eser/stack, a2aproject/a2a-tck,

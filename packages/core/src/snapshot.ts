@@ -243,7 +243,7 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
   const tips = other.value;
   const specPaths = ADAPTERS.map((a) => a.pathspecs.map((p) => p.replace(/\/+$/, '')));
   const flat = specPaths.flat();
-  const ids = await objectIds(repo.path, [tip, ...tips.map((t) => t.ref)].flatMap((ref) => flat.map((p) => `${ref}:${p}`)),
+  const ids = await objectIds(repo.path, [tip, ...tips.map((t) => t.hash)].flatMap((rev) => flat.map((p) => `${rev}:${p}`)),
     signal);
   fail(ids.error);
   if (cancelled()) return snap;
@@ -255,7 +255,7 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
   // Commits of all branches in one log; each branch takes those reachable from its tip.
   let branchCommits: CommitInfo[] = [];
   if (tips.length > 0) {
-    const bl = await logCommits(repo.path, tips.map((t) => t.ref), snap.main.reachRefs, '', true, signal);
+    const bl = await logCommits(repo.path, tips.map((t) => t.hash), snap.main.reachRefs, '', true, signal);
     fail(bl.error);
     branchCommits = bl.value;
   }
@@ -272,7 +272,7 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
       return own.some((id) => id !== '') && own.some((id, j) => id !== mains[j]);
     });
     if (changed.length > 0) {
-      const r = await readAt(bd.tip.ref, changed);
+      const r = await readAt(bd.tip.hash, changed);
       bd.programs = r.programs;
       for (const i of r.issues) {
         const key = issueKey(i);

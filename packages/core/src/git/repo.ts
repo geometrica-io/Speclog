@@ -18,7 +18,7 @@ export interface CommitInfo {
   refs: CommitRefs;
 }
 
-/** name: shown to the user ("feature/x", "origin/feature/x"); ref: full ref name given to git. */
+/** name: shown to the user ("feature/x", "origin/feature/x"); ref: full ref name (key/display); hash: what git is given. */
 export interface BranchTip { name: string; ref: string; hash: string; date: string; }
 
 export interface MainRef {
@@ -129,6 +129,7 @@ export async function listOtherBranches(repo: string, m: MainRef, signal?: Abort
     else if (ref.startsWith('refs/remotes/')) name = ref.slice(13);
     else continue;
     if (ref === 'refs/remotes/origin/HEAD' || m.reachRefs.includes(ref)) continue;
+    // committerdate:short is in the committer's zone, so the age can be one day off at the bound (as the stale age is).
     // Outside the window (tip older than `days`; a tip exactly `days` old is kept): not read at all.
     if (window && window.days > 0 && daysBetween(f[2], window.today) > window.days) continue;
     tips.push({ name, ref, hash: f[1], date: f[2] });

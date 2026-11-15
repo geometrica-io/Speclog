@@ -27,7 +27,10 @@ function ymd(d: Date): string {
 /** Local date today, YYYY-MM-DD. */
 const today = () => ymd(new Date());
 /** Local date n days before today. */
-const daysAgo = (n: number) => ymd(new Date(Date.now() - n * 86400000));
+const daysAgo = (n: number) => {
+  const d = new Date();
+  return ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() - n, 12)); // calendar days from local noon: DST-safe
+};
 
 const info = (r: TestRepo): RepoInfo => ({ name: 'repo', owner: '', path: r.dir, origin: '', key: r.dir });
 
@@ -118,6 +121,35 @@ describe('snapshot', () => {
       expect((await buildSnapshot(info(r), { today: today() })).branches.length).toBe(1);
       const r2 = await aged(31);
       expect((await buildSnapshot(info(r2), { today: today() })).branches).toEqual([]);
+    }, T);
+    it('staleBranch still fires for a branch inside the window at defaults', async () => {
+      const r = await repo();
+      await r.commit('init', { 'docs/tasks/a.md': file(item('A1')) });
+      await r.branch('feature/stale');
+      await r.commit('work\n\nTask-Progress: A1', {}, `${daysAgo(20)}T12:00:00`);
+      await r.checkout('main');
+      const s = await buildSnapshot(info(r), { today: today() });
+      expect(s.branches.length).toBe(1);
+      const ws = resolveAll([s], 'unverified');
+      const cfg = { today: today(), staleBranchDays: 7, recentDays: 30, fetchFailSeconds: 3600 };
+      expect(computeAttention(ws, cfg, [], 0).some((a) => a.kind === 'staleBranch')).toBe(true);
+    }, T);
+    it('reads a branch whose ref name is too long for a Windows path (addressed by tip hash)', async () => {
+      const r = await repo();
+      await r.commit('init', { 'docs/tasks/a.md': file(item('A1')) });
+      await r.branch('tmp');
+      await r.commit('add', { 'docs/tasks/a.md': file(item('A1') + item('N1')) });
+      const hash = await r.head();
+      await r.checkout('main');
+      await r.git(['branch', '-D', 'tmp']);
+      // Only in packed-refs, so no loose file is ever needed to list it.
+      const long = ['dependabot', 'x'.repeat(100), 'y'.repeat(100), 'z'.repeat(100)].join('/');
+      fs.appendFileSync(path.join(r.dir, '.git', 'packed-refs'), `${hash} refs/remotes/origin/${long}\n`);
+      const s = await buildSnapshot(info(r), { today: today() });
+      expect(s.error).toBe('');
+      expect(s.branches.length).toBe(1);
+      expect(s.branches[0].tip.name).toBe(`origin/${long}`);
+      expect(itemIds(s.branches[0].programs)).toContain('N1');
     }, T);
     it('normalizes the setting: invalid values give the default', () => {
       expect(DEFAULT_BRANCH_DAYS).toBe(30);
