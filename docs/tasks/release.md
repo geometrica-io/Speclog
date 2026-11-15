@@ -25,6 +25,7 @@ status: open
 size: S
 depends: REL.3
 note: Run release.yml manually (workflow_dispatch = dry run): build, test, package, verify the Marketplace token and the Open VSX trusted publisher (OIDC, no OVSX_PAT), publish nothing. vsce does not check "private": true. Needs the trusted publisher set up on open-vsx.org for geometrica-io/Speclog + release.yml.
+evidence: dry run 43741604524 on fd6148f green (build, test, package, Marketplace token verified; nothing published; Open VSX gated by OVSX_TRUSTED until REL.8)
 
 ## REL.5 Confirm CI is green on Windows, macOS and Linux
 status: open
