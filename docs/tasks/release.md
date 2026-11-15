@@ -17,7 +17,7 @@ note: Replace "Screenshot pending." with a board screenshot (dark theme, several
 ## REL.3 Set up the geometricaio publisher and tokens
 status: open
 size: S
-note: Marketplace publisher geometricaio (display name Geometrica.io), VSCE_PAT and OVSX_PAT repository secrets, Open VSX namespace.
+note: Marketplace publisher geometricaio (display name Geometrica.io), VSCE_PAT and OVSX_PAT repository secrets. The Open VSX namespace is created by release.yml on the first release if missing.
 
 ## REL.4 Dry-run the release workflow
 status: open
