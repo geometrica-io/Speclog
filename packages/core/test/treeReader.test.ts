@@ -1,6 +1,7 @@
 // Task file listing through the build's `git cat-file --batch` process (TreeReader): the same
 // files, object ids and order as `git ls-tree -r`, with trees cached by object id.
 import { describe, it, expect, afterEach } from 'vitest';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BlobReader } from '../src/git/blobReader';
@@ -124,6 +125,28 @@ describe('TreeReader', () => {
     // The same ref again: only its root tree is requested.
     await tr.listBlobs('refs/heads/main', ['specs/']);
     expect(tr.treesParsed).toBe(8);
+  }, T);
+
+  it('reads a zero-padded 040000 tree mode as a tree, like ls-tree', async () => {
+    const r = await repo();
+    await r.commit('init', { 'specs/a.md': 'a' });
+    const blob = await must(r, ['hash-object', '-w', '--stdin'], 'deep');
+    // Old imported histories hold zero-padded modes (fsck zeroPaddedFilemode); git reads them as octal.
+    const entry = (mode: string, name: string, oid: string) =>
+      Buffer.concat([Buffer.from(`${mode} ${name}\0`), Buffer.from(oid, 'hex')]);
+    const writeTree = (data: Buffer): string => {
+      const w = spawnSync('git', ['hash-object', '-t', 'tree', '--literally', '-w', '--stdin'], { cwd: r.dir, input: data });
+      expect(w.status, String(w.stderr)).toBe(0);
+      return String(w.stdout).trim();
+    };
+    const inner = writeTree(entry('100644', 'deep.md', blob));
+    const root = writeTree(Buffer.concat([entry('040000', 'specs', inner), entry('100644', 'z.md', blob)]));
+    const commit = await must(r, ['commit-tree', root, '-m', 'padded']);
+    await must(r, ['update-ref', 'refs/heads/padded', commit]);
+    const got = await new TreeReader(open(r)).listBlobs('refs/heads/padded', ['specs/', 'z.md']);
+    expect(got.error).toBe('');
+    expect(got.value.map((f) => f.path)).toEqual(['specs/deep.md', 'z.md']);
+    expect(got.value.map((f) => f.path)).toEqual(await lsTreeNames(r, 'refs/heads/padded', ['specs/', 'z.md']));
   }, T);
 
   it('a missing path is an empty list; a missing ref is an error', async () => {

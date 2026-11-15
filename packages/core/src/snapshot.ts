@@ -221,7 +221,11 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
   if (cancelled()) return snap;
   if (!snap.main.name) return settle(); // no default branch (empty repo): not an error
 
-  const tip = snap.main.tipRef;
+  // Main's tip by hash: the objects below need no ref name (only --no-merged keeps the name).
+  const tipHash = await resolveCommit(repo.path, snap.main.tipRef, signal);
+  fail(tipHash.error);
+  if (err) return settle();
+  const tip = tipHash.value || snap.main.tipRef;
   const listed = await trees.listBlobs(tip, allSpecs);
   fail(listed.error);
   const paths = listed.value.map((f) => f.path);

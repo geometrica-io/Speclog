@@ -20,9 +20,12 @@ function parseTree(data: Buffer, oidLen: number): Entry[] | null {
     const nul = data.indexOf(0, sp + 1);
     if (nul === -1 || nul + 1 + oidLen > data.length) return null;
     const mode = data.toString('latin1', i, sp);
-    // 40000 tree, 160000 submodule (a commit); every other mode (100644, 100755, 120000 symlink)
-    // is a blob, as ls-tree reports it.
-    const kind = mode === '40000' ? 'tree' : mode === '160000' ? 'commit' : 'blob';
+    if (!/^[0-7]+$/.test(mode)) return null;
+    // git reads modes as octal, so a zero-padded 040000 is still a tree. 040000 tree, 160000
+    // submodule (a commit); every other mode (100644, 100755, 120000 symlink) is a blob, as
+    // ls-tree reports it.
+    const fmt = parseInt(mode, 8) & 0o170000;
+    const kind = fmt === 0o040000 ? 'tree' : fmt === 0o160000 ? 'commit' : 'blob';
     out.push({ name: data.toString('utf8', sp + 1, nul), oid: data.toString('hex', nul + 1, nul + 1 + oidLen), kind });
     i = nul + 1 + oidLen;
   }
@@ -37,7 +40,6 @@ interface Spec { name: string; dir: boolean; }
  */
 export class TreeReader {
   private readonly trees = new Map<string, Promise<RepoResult<Entry[]>>>();
-  private readonly flats = new Map<string, Promise<RepoResult<TreeBlob[]>>>();
   /** Tree objects parsed so far (tests: the cache). */
   treesParsed = 0;
 
@@ -78,24 +80,20 @@ export class TreeReader {
     return p;
   }
 
-  /** Every blob under tree oid, paths relative to it, in tree order. */
-  private flat(oid: string): Promise<RepoResult<TreeBlob[]>> {
-    let p = this.flats.get(oid);
-    if (!p) {
-      p = (async (): Promise<RepoResult<TreeBlob[]>> => {
-        const t = await this.tree(oid);
-        if (t.error) return { value: [], error: t.error };
-        const parts = await Promise.all(t.value.map(async (e): Promise<RepoResult<TreeBlob[]>> => {
-          if (e.kind === 'blob') return { value: [{ path: e.name, oid: e.oid }], error: '' };
-          if (e.kind !== 'tree') return { value: [], error: '' };
-          const sub = await this.flat(e.oid);
-          return { value: sub.value.map((f) => ({ path: `${e.name}/${f.path}`, oid: f.oid })), error: sub.error };
-        }));
-        return join(parts);
-      })();
-      this.flats.set(oid, p);
-    }
-    return p;
+  /**
+   * Every blob under tree oid, paths relative to it, in tree order. Built per call from the cached
+   * parsed trees (no I/O once they are read), so no flattened listing is kept per directory level.
+   */
+  private async flat(oid: string): Promise<RepoResult<TreeBlob[]>> {
+    const t = await this.tree(oid);
+    if (t.error) return { value: [], error: t.error };
+    const parts = await Promise.all(t.value.map(async (e): Promise<RepoResult<TreeBlob[]>> => {
+      if (e.kind === 'blob') return { value: [{ path: e.name, oid: e.oid }], error: '' };
+      if (e.kind !== 'tree') return { value: [], error: '' };
+      const sub = await this.flat(e.oid);
+      return { value: sub.value.map((f) => ({ path: `${e.name}/${f.path}`, oid: f.oid })), error: sub.error };
+    }));
+    return join(parts);
   }
 
   /** Blobs of tree oid (at prefix, "" or ending in "/") matched by specs, full paths. */

@@ -134,6 +134,7 @@ describe('snapshot', () => {
       const cfg = { today: today(), staleBranchDays: 7, recentDays: 30, fetchFailSeconds: 3600 };
       expect(computeAttention(ws, cfg, [], 0).some((a) => a.kind === 'staleBranch')).toBe(true);
     }, T);
+    // A regression test only on Windows (MAX_PATH); on POSIX it passes trivially.
     it('reads a branch whose ref name is too long for a Windows path (addressed by tip hash)', async () => {
       const r = await repo();
       await r.commit('init', { 'docs/tasks/a.md': file(item('A1')) });
@@ -144,7 +145,18 @@ describe('snapshot', () => {
       await r.git(['branch', '-D', 'tmp']);
       // Only in packed-refs, so no loose file is ever needed to list it.
       const long = ['dependabot', 'x'.repeat(100), 'y'.repeat(100), 'z'.repeat(100)].join('/');
-      fs.appendFileSync(path.join(r.dir, '.git', 'packed-refs'), `${hash} refs/remotes/origin/${long}\n`);
+      const packed = path.join(r.dir, '.git', 'packed-refs');
+      const lines = fs.existsSync(packed) ? fs.readFileSync(packed, 'utf8').split('\n').filter((l) => l !== '') : [];
+      const header = lines.filter((l) => l.startsWith('#'));
+      // Entries stay sorted by refname (the header may claim `sorted`); peel lines (^) follow their ref.
+      const groups: string[][] = [];
+      for (const l of lines.filter((x) => !x.startsWith('#'))) {
+        if (l.startsWith('^') && groups.length > 0) groups[groups.length - 1].push(l);
+        else groups.push([l]);
+      }
+      groups.push([`${hash} refs/remotes/origin/${long}`]);
+      groups.sort((a, b) => { const x = a[0].slice(41), y = b[0].slice(41); return x < y ? -1 : x > y ? 1 : 0; });
+      fs.writeFileSync(packed, [...header, ...groups.flat()].join('\n') + '\n');
       const s = await buildSnapshot(info(r), { today: today() });
       expect(s.error).toBe('');
       expect(s.branches.length).toBe(1);
