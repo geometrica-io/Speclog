@@ -24,7 +24,7 @@ evidence: Marketplace publisher geometricaio exists; GitHub secrets VSCE_PAT and
 status: open
 size: S
 depends: REL.3
-note: Run release.yml manually (workflow_dispatch = dry run): build, test, package, create the Open VSX namespace, verify both tokens, publish nothing. vsce does not check "private": true.
+note: Run release.yml manually (workflow_dispatch = dry run): build, test, package, verify the Marketplace token and the Open VSX trusted publisher (OIDC, no OVSX_PAT), publish nothing. vsce does not check "private": true. Needs the trusted publisher set up on open-vsx.org for geometrica-io/Speclog + release.yml.
 
 ## REL.5 Confirm CI is green on Windows, macOS and Linux
 status: open

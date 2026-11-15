@@ -2,17 +2,19 @@ name: Release
 on:
   push:
     tags: ['v*']
-  # Manual run = dry run: build, test, package, create the Open VSX namespace if missing and verify
-  # both tokens, but publish nothing.
+  # Manual run = dry run: build, test, package, verify the Marketplace token and the Open VSX trusted
+  # publisher, but publish nothing.
   workflow_dispatch:
 permissions:
   contents: read
+  # Open VSX trusted publishing: ovsx exchanges this job's GitHub OIDC token for a short-lived
+  # publishing token, so no Open VSX secret is stored.
+  id-token: write
 jobs:
   release:
     runs-on: ubuntu-latest
     env:
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
-      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,20 +44,8 @@ jobs:
       - name: Publish to the VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' && github.event_name == 'push' }}
         run: npx vsce publish --packagePath packages/vscode/speclog-*.vsix
-      - name: Create the Open VSX namespace if it does not exist
-        if: ${{ env.OVSX_PAT != '' }}
-        run: |
-          ns=$(node -p "require('./packages/vscode/package.json').publisher")
-          code=$(curl -s -o /dev/null -w '%{http_code}' "https://open-vsx.org/api/$ns")
-          if [ "$code" = "404" ]; then
-            npx ovsx create-namespace "$ns" -p "$OVSX_PAT"
-          elif [ "$code" != "200" ]; then
-            echo "Open VSX answered HTTP $code for namespace $ns" >&2
-            exit 1
-          fi
-      - name: Verify the Open VSX token
-        if: ${{ env.OVSX_PAT != '' }}
-        run: npx ovsx verify-pat "$(node -p "require('./packages/vscode/package.json').publisher")" -p "$OVSX_PAT"
+      - name: Verify the Open VSX trusted publisher
+        run: node scripts/check-ovsx-trusted-publisher.cjs packages/vscode/package.json
       - name: Publish to Open VSX
-        if: ${{ env.OVSX_PAT != '' && github.event_name == 'push' }}
-        run: npx ovsx publish packages/vscode/speclog-*.vsix -p "$OVSX_PAT"
+        if: ${{ github.event_name == 'push' }}
+        run: npx ovsx publish packages/vscode/speclog-*.vsix --trusted-publishing
