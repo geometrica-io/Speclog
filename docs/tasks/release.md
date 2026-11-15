@@ -37,6 +37,7 @@ evidence: GitHub Actions run 43650329484 on 75ed1f1 — windows, macos, ubuntu g
 status: open
 size: M
 note: Clone two or three public repositories per format and use Speclog on them for a few days; v1 parity was only proven on docs/tasks.
+evidence: scan of six public repos (MrLesk/Backlog.md, eser/stack, a2aproject/a2a-tck, pamburus/hl, raphaeltm/simple-agent-manager, re-cinq/lore) found and fixed RR.1-RR.5; final scan 2026-11-15: no errors, every repo under 7 s (was out of memory after 15 min)
 
 ## REL.7 Publish 0.1.0 as a pre-release
 status: open

@@ -160,7 +160,7 @@ describe('attentionGroups', () => {
   });
 
   it('gives only unverifiedSummary rows the trust button', () => {
-    const g = attentionGroups([att('fileDoneNoGit', { ref: 'T1' }), att('unverifiedSummary', { count: 3 })], S);
+    const g = attentionGroups([att('gitDoneFileOpen', { ref: 'T1' }), att('unverifiedSummary', { count: 3 })], S);
     expect(g[0].rows[0].button).toBeUndefined();
     expect(g[1].rows[0].button).toEqual({ text: 'att.trust', action: { type: 'command', id: 'trustTaskFiles', repoKey: 'key' } });
   });

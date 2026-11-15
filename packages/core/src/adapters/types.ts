@@ -4,6 +4,17 @@ import type { ParseIssue, Program, SourceFormat } from '../model';
 export interface SourceFile {
   path: string;
   text: string;
+  /** Git blob object id of text, when known: lets a ParseCache reuse the parse of an identical file. */
+  oid?: string;
+}
+
+/**
+ * Memo of per-file parse steps for one snapshot build: get(key, compute) returns the value stored
+ * under key, computing it once. Keys hold the step, the file path(s) and blob id(s), so a file
+ * identical on many branches is parsed once and its issues keep their path.
+ */
+export interface ParseCache {
+  get<T>(key: string, compute: () => T): T;
 }
 
 export interface AdapterResult {
@@ -23,6 +34,6 @@ export interface TaskSourceAdapter {
   statusPathspecs?: string[];
   /** Picks, from the listed repo paths, the files the adapter parses. */
   select(paths: string[]): string[];
-  parse(files: SourceFile[]): AdapterResult;
+  parse(files: SourceFile[], cache?: ParseCache): AdapterResult;
   idsCaseInsensitive: boolean;
 }

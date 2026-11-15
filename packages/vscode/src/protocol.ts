@@ -16,7 +16,7 @@ export type SourceFormat = 'docsTasks' | 'backlogMd' | 'specKit';
 
 export type AttentionKind = 'staleBranch' | 'untaggedCommit' | 'evidenceConflict' | 'unknownRef' | 'formatIssue' |
   'duplicateId' | 'noTaskFiles' | 'historyDoneAfterSince' | 'fetchFailing' | 'gitError' |
-  'fileDoneNoGit' | 'gitDoneFileOpen' | 'unverifiedSummary' | 'uncommittedTaskChanges' | 'ambiguousRepoRef';
+  'gitDoneFileOpen' | 'unverifiedSummary' | 'uncommittedTaskChanges' | 'ambiguousRepoRef';
 
 export type FilterPreset = 'all' | 'open' | 'done' | 'onBranch' | 'bugs';
 export const FILTER_PRESETS: readonly FilterPreset[] = ['all', 'open', 'done', 'onBranch', 'bugs'];
@@ -207,11 +207,11 @@ export const STRING_KEYS = [
   'att.empty', 'att.repository', 'att.reference', 'att.detail', 'att.trust',
   'kind.staleBranch', 'kind.untaggedCommit', 'kind.evidenceConflict', 'kind.unknownRef', 'kind.formatIssue',
   'kind.duplicateId', 'kind.noTaskFiles', 'kind.historyDoneAfterSince', 'kind.fetchFailing', 'kind.gitError',
-  'kind.fileDoneNoGit', 'kind.gitDoneFileOpen', 'kind.unverifiedSummary', 'kind.uncommittedTaskChanges',
+  'kind.gitDoneFileOpen', 'kind.unverifiedSummary', 'kind.uncommittedTaskChanges',
   'kind.ambiguousRepoRef',
   'detail.staleBranch', 'detail.evidence.presentFound', 'detail.evidence.presentMissing',
   'detail.evidence.absentFound', 'detail.evidence.absentMissing', 'detail.unknownRef', 'detail.duplicateId',
-  'detail.noTaskFiles', 'detail.historyDoneAfterSince', 'detail.fileDoneNoGit', 'detail.gitDoneFileOpen',
+  'detail.noTaskFiles', 'detail.historyDoneAfterSince', 'detail.gitDoneFileOpen',
   'detail.unverifiedSummary', 'detail.uncommittedTaskChanges', 'detail.ambiguousRepoRef',
   'issue.syntax', 'issue.duplicate-id', 'issue.unknown-field', 'issue.bad-status', 'issue.missing-status',
   'issue.bad-date', 'issue.bad-size', 'issue.bad-evidence', 'issue.bad-since', 'issue.bad-trust',

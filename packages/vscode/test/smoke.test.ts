@@ -18,6 +18,29 @@ async function waitFor(what: string, cond: () => boolean): Promise<void> {
   }
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Writes a unique sentinel to the clipboard and reads it back (OS clipboard writes can silently fail under contention). */
+async function primeClipboard(): Promise<string> {
+  const sentinel = `speclog-smoke-${Math.random().toString(36).slice(2)}`;
+  for (let i = 0; i < 20; i++) {
+    await vscode.env.clipboard.writeText(sentinel);
+    if ((await vscode.env.clipboard.readText()) === sentinel) return sentinel;
+    await sleep(100);
+  }
+  throw new Error('the clipboard never took the sentinel text');
+}
+
+/** The clipboard text once it is no longer the sentinel. */
+async function clipboardAfter(sentinel: string): Promise<string> {
+  for (let i = 0; i < 50; i++) {
+    const text = await vscode.env.clipboard.readText();
+    if (text !== sentinel) return text;
+    await sleep(100);
+  }
+  throw new Error('the clipboard never changed from the sentinel: the action did not write it');
+}
+
 export async function run(): Promise<void> {
   const ext = vscode.extensions.getExtension<SpeclogApi>('geometricaio.speclog');
   assert.ok(ext, 'extension geometricaio.speclog is installed');
@@ -156,23 +179,23 @@ async function agentTests(api: SpeclogApi): Promise<void> {
   console.log('ok - a done item is refused');
 
   await setAgent('target', 'clipboard');
-  await vscode.env.clipboard.writeText('');
+  const s1 = await primeClipboard();
   assert.strictEqual(await send(b1), 'sent');
-  const prompt = await vscode.env.clipboard.readText();
+  const prompt = await clipboardAfter(s1);
   assert.ok(prompt.includes('B1') && prompt.includes('Task: B1'), prompt);
   assert.ok(prompt.includes(note) && prompt.includes('\n'), 'the note, unchanged, in a prompt of several lines');
   console.log('ok - the clipboard target copies the prompt');
 
-  await vscode.env.clipboard.writeText('');
+  const s2 = await primeClipboard();
   await vscode.commands.executeCommand('speclog.copyAgentPrompt', b1);
-  assert.strictEqual(await vscode.env.clipboard.readText(), prompt);
+  assert.strictEqual(await clipboardAfter(s2), prompt);
   console.log('ok - speclog.copyAgentPrompt copies the same prompt');
 
   // Command palette: the panel's selection, and only an item.
-  await vscode.env.clipboard.writeText('');
+  const s3 = await primeClipboard();
   await detailsOf(b1);
   assert.strictEqual(await vscode.commands.executeCommand<string>('speclog.sendToAgent'), 'sent');
-  assert.strictEqual(await vscode.env.clipboard.readText(), prompt);
+  assert.strictEqual(await clipboardAfter(s3), prompt);
   await detailsOf(tree.children[0].key);
   assert.strictEqual(await vscode.commands.executeCommand<string>('speclog.sendToAgent'), 'refused', 'a repository row');
   console.log('ok - the palette command sends the selected item, never a repository');

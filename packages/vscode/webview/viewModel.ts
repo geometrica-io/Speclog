@@ -193,7 +193,7 @@ export interface AttentionRow {
 export interface AttentionGroup { kind: AttentionKind; title: string; rows: AttentionRow[]; }
 
 const ITEM_KINDS: ReadonlySet<AttentionKind> = new Set<AttentionKind>(
-  ['evidenceConflict', 'duplicateId', 'historyDoneAfterSince', 'fileDoneNoGit', 'gitDoneFileOpen']);
+  ['evidenceConflict', 'duplicateId', 'historyDoneAfterSince', 'gitDoneFileOpen']);
 const HASH_KINDS: ReadonlySet<AttentionKind> = new Set<AttentionKind>(['untaggedCommit', 'unknownRef', 'ambiguousRepoRef']);
 
 function detailText(a: AttentionItemDto, S: Strings): string {
@@ -214,7 +214,6 @@ function detailText(a: AttentionItemDto, S: Strings): string {
     case 'duplicateId': return fmt(S['detail.duplicateId'], a.detail);
     case 'noTaskFiles': return S['detail.noTaskFiles'];
     case 'historyDoneAfterSince': return fmt(S['detail.historyDoneAfterSince'], a.detail);
-    case 'fileDoneNoGit': return fmt(S['detail.fileDoneNoGit'], a.detail);
     case 'gitDoneFileOpen': return fmt(S['detail.gitDoneFileOpen'], a.detail);
     case 'unverifiedSummary': return fmt(S['detail.unverifiedSummary'], a.count);
     case 'uncommittedTaskChanges': return S['detail.uncommittedTaskChanges'];

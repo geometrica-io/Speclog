@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildSnapshot, keepLastGood, RepoSnapshot } from '../src/snapshot';
+import { buildSnapshot, keepLastGood, normalizeBranchDays, DEFAULT_BRANCH_DAYS, RepoSnapshot } from '../src/snapshot';
 import type { Program, RepoInfo } from '../src/model';
 import { TestRepo, TestRemote } from './helpers/testRepo';
 import { resolveAll } from '../src/status';
@@ -27,7 +27,10 @@ function ymd(d: Date): string {
 /** Local date today, YYYY-MM-DD. */
 const today = () => ymd(new Date());
 /** Local date n days before today. */
-const daysAgo = (n: number) => ymd(new Date(Date.now() - n * 86400000));
+const daysAgo = (n: number) => {
+  const d = new Date();
+  return ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() - n, 12)); // calendar days from local noon: DST-safe
+};
 
 const info = (r: TestRepo): RepoInfo => ({ name: 'repo', owner: '', path: r.dir, origin: '', key: r.dir });
 
@@ -89,6 +92,84 @@ describe('snapshot', () => {
     expect(s.branches.length).toBe(1);
     expect(itemIds(s.branches[0].programs)).toContain('N1');
   }, T);
+
+  describe('branch window', () => {
+    /** main plus one branch whose only commit is `age` days old (noon, so the local date is stable). */
+    async function aged(age: number): Promise<TestRepo> {
+      const r = await repo();
+      await r.commit('init', { 'docs/tasks/a.md': file(item('A1')) });
+      await r.branch('feature/old');
+      await r.commit('add', { 'docs/tasks/a.md': file(item('A1') + item('N1')) }, `${daysAgo(age)}T12:00:00`);
+      await r.checkout('main');
+      return r;
+    }
+    it('ignores a 40-day-old branch at the default window', async () => {
+      const r = await aged(40);
+      const s = await buildSnapshot(info(r), { today: today() });
+      expect(s.branches).toEqual([]);
+    }, T);
+    it('reads it with branchDays 0 (all) and 60', async () => {
+      const r = await aged(40);
+      for (const branchDays of [0, 60]) {
+        const s = await buildSnapshot(info(r), { today: today(), branchDays });
+        expect(s.branches.length).toBe(1);
+        expect(itemIds(s.branches[0].programs)).toContain('N1');
+      }
+    }, T);
+    it('keeps a tip exactly branchDays old and drops one day older', async () => {
+      const r = await aged(30);
+      expect((await buildSnapshot(info(r), { today: today() })).branches.length).toBe(1);
+      const r2 = await aged(31);
+      expect((await buildSnapshot(info(r2), { today: today() })).branches).toEqual([]);
+    }, T);
+    it('staleBranch still fires for a branch inside the window at defaults', async () => {
+      const r = await repo();
+      await r.commit('init', { 'docs/tasks/a.md': file(item('A1')) });
+      await r.branch('feature/stale');
+      await r.commit('work\n\nTask-Progress: A1', {}, `${daysAgo(20)}T12:00:00`);
+      await r.checkout('main');
+      const s = await buildSnapshot(info(r), { today: today() });
+      expect(s.branches.length).toBe(1);
+      const ws = resolveAll([s], 'unverified');
+      const cfg = { today: today(), staleBranchDays: 7, recentDays: 30, fetchFailSeconds: 3600 };
+      expect(computeAttention(ws, cfg, [], 0).some((a) => a.kind === 'staleBranch')).toBe(true);
+    }, T);
+    // A regression test only on Windows (MAX_PATH); on POSIX it passes trivially.
+    it('reads a branch whose ref name is too long for a Windows path (addressed by tip hash)', async () => {
+      const r = await repo();
+      await r.commit('init', { 'docs/tasks/a.md': file(item('A1')) });
+      await r.branch('tmp');
+      await r.commit('add', { 'docs/tasks/a.md': file(item('A1') + item('N1')) });
+      const hash = await r.head();
+      await r.checkout('main');
+      await r.git(['branch', '-D', 'tmp']);
+      // Only in packed-refs, so no loose file is ever needed to list it.
+      const long = ['dependabot', 'x'.repeat(100), 'y'.repeat(100), 'z'.repeat(100)].join('/');
+      const packed = path.join(r.dir, '.git', 'packed-refs');
+      const lines = fs.existsSync(packed) ? fs.readFileSync(packed, 'utf8').split('\n').filter((l) => l !== '') : [];
+      const header = lines.filter((l) => l.startsWith('#'));
+      // Entries stay sorted by refname (the header may claim `sorted`); peel lines (^) follow their ref.
+      const groups: string[][] = [];
+      for (const l of lines.filter((x) => !x.startsWith('#'))) {
+        if (l.startsWith('^') && groups.length > 0) groups[groups.length - 1].push(l);
+        else groups.push([l]);
+      }
+      groups.push([`${hash} refs/remotes/origin/${long}`]);
+      groups.sort((a, b) => { const x = a[0].slice(41), y = b[0].slice(41); return x < y ? -1 : x > y ? 1 : 0; });
+      fs.writeFileSync(packed, [...header, ...groups.flat()].join('\n') + '\n');
+      const s = await buildSnapshot(info(r), { today: today() });
+      expect(s.error).toBe('');
+      expect(s.branches.length).toBe(1);
+      expect(s.branches[0].tip.name).toBe(`origin/${long}`);
+      expect(itemIds(s.branches[0].programs)).toContain('N1');
+    }, T);
+    it('normalizes the setting: invalid values give the default', () => {
+      expect(DEFAULT_BRANCH_DAYS).toBe(30);
+      for (const v of [undefined, null, 'x', -1, 1.5, NaN, Infinity]) expect(normalizeBranchDays(v)).toBe(30);
+      expect(normalizeBranchDays(0)).toBe(0);
+      expect(normalizeBranchDays(60)).toBe(60);
+    });
+  });
 
   it('branch commits exclude main', async () => {
     const r = await repo();

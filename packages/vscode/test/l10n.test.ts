@@ -40,3 +40,14 @@ describe('l10n bundle', () => {
     expect(Object.keys(bundle).filter((k) => !src.has(k))).toEqual([]);
   });
 });
+
+describe('unverified summary text', () => {
+  it('names the Trust current task files command by its package.nls.json title', () => {
+    const nls = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.nls.json'), 'utf8')) as Record<string, string>;
+    const title = nls['command.trustTaskFiles'];
+    expect(title).toBeTruthy();
+    const line = fs.readFileSync(path.join(srcDir, 'strings.ts'), 'utf8').split('\n').find((l) => l.includes("'detail.unverifiedSummary'"));
+    expect(line).toBeDefined();
+    expect(line).toContain(`"Speclog: ${title}"`);
+  });
+});

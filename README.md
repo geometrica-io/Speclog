@@ -106,8 +106,9 @@ and manual-done checks start from there. **Speclog: Stop trusting task files** r
 
 The bottom panel lists what needs a look: stale branches with unmerged task work, commits that changed
 code (files outside `docs/` and the task folders of the formats the repository uses) without a `Task:`
-line, items whose file status contradicts git (done in the file with no commit; closed in git but still
-open in the file), unknown IDs in `Task:` lines, duplicate IDs, format issues, repositories without
+line, items whose file status contradicts git (closed in git but still open in the file), items done
+only in the file (one summary row per repository; see **Speclog: Trust current task files**), unknown
+IDs in `Task:` lines, duplicate IDs, format issues, repositories without
 task files, manual `done` after the cutoff, uncommitted task changes, fetch failures and git errors.
 The commit-msg hook exempts every format's task folders in every repository, so in a repository that
 does not use Backlog.md a commit touching only `backlog/` gets no hook warning but is listed here.
@@ -163,6 +164,7 @@ template unless it contains `{guards}`.
 | `speclog.fetch.enabled` | `true` | Fetch `origin` in the background. Only `refs/remotes/origin/*` is updated; the working tree is never touched. |
 | `speclog.fetch.intervalSeconds` | `300` | Seconds between two background fetches of a repository (minimum 30). |
 | `speclog.staleBranchDays` | `7` | A branch with unmerged task work older than this many days is listed under Attention (minimum 1). |
+| `speclog.branchDays` | `30` | Only unmerged branches with a commit in the last this many days are read; older branches add no items, show no On branch and no stale row. `0` reads all branches (slow with thousands of branches). Minimum 0. |
 | `speclog.unverifiedDone` | `"unverified"` | How a hand-written "done" without a `Task:` commit is shown (see Statuses). |
 | `speclog.agent.target` | `"auto"` | Where Send to agent delivers the prompt: `auto`, `chat`, `terminal` or `clipboard` (see Send to agent). |
 | `speclog.agent.terminalCommand` | `["claude"]` | The `terminal` target's command: executable first (a name on `PATH` or an absolute path), then fixed arguments (for example `["claude", "--model", "opus"]`). Never split from a string. A per-machine setting (`machine-overridable`). |

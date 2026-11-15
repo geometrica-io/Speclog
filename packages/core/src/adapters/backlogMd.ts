@@ -1,8 +1,8 @@
 import { parseDocument } from 'yaml';
 import type { Item, ParseIssue, Program } from '../model';
 import { isValidDate } from '../text';
-import { sortedByPath } from './files';
-import type { SourceFile, TaskSourceAdapter } from './types';
+import { memo, sortedByPath } from './files';
+import type { ParseCache, SourceFile, TaskSourceAdapter } from './types';
 
 /**
  * Backlog.md adapter (spec §4.3). Format checked against Backlog.md v1.55.3:
@@ -188,7 +188,8 @@ function newItem(): Item {
   };
 }
 
-function parseDir(dir: string, files: SourceFile[], config: SourceFile | undefined, issues: ParseIssue[]): Program | null {
+function parseDir(dir: string, files: SourceFile[], config: SourceFile | undefined, issues: ParseIssue[],
+  cache: ParseCache | undefined): Program | null {
   const kinds = files.map((f) => ({ f, c: classify(f.path)! }));
   const tasks = kinds.filter((k) => k.c.kind === 'task' || k.c.kind === 'completed');
   if (tasks.length === 0) return null;
@@ -198,7 +199,7 @@ function parseDir(dir: string, files: SourceFile[], config: SourceFile | undefin
   const milestones = new Map<string, string>();
   for (const k of kinds) {
     if (k.c.kind !== 'milestone') continue;
-    const fm = readFrontMatter(k.f.text);
+    const fm = memo(cache, 'backlogMd.frontMatter', [k.f], () => readFrontMatter(k.f.text));
     if (!fm.ok) continue;
     const id = str(fm.data.id);
     const title = str(fm.data.title);
@@ -211,7 +212,7 @@ function parseDir(dir: string, files: SourceFile[], config: SourceFile | undefin
   const seen = new Map<string, string>(); // lower-case id -> path of the file that kept it
   for (const { f, c } of tasks) {
     const issue = (line: number, kind: string, detail: string) => issues.push({ path: f.path, line, kind, detail });
-    const fm = readFrontMatter(f.text);
+    const fm = memo(cache, 'backlogMd.frontMatter', [f], () => readFrontMatter(f.text));
     if (!fm.ok) { issue(fm.line, 'syntax', fm.detail); continue; }
     const d = fm.data;
     const nameMatch = FILE_ID_RE.exec(c.name);
@@ -263,7 +264,7 @@ export const backlogMdAdapter: TaskSourceAdapter = {
   select(paths: string[]): string[] {
     return paths.filter((p) => p === ROOT_CONFIG || classify(p) !== null);
   },
-  parse(input: SourceFile[]) {
+  parse(input: SourceFile[], cache?: ParseCache) {
     const files = sortedByPath(input);
     const issues: ParseIssue[] = [];
     const inDir = (dir: string) => files.filter((f) => classify(f.path)?.dir === dir);
@@ -293,7 +294,7 @@ export const backlogMdAdapter: TaskSourceAdapter = {
       if (dir === '') return { programs: [], issues };
     }
     const own = inDir(dir);
-    const p = parseDir(dir, own, config ?? folderConfig(own, dir), issues);
+    const p = parseDir(dir, own, config ?? folderConfig(own, dir), issues, cache);
     return { programs: p ? [p] : [], issues };
   },
 };

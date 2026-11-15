@@ -3,8 +3,9 @@
 // "<what>: <reason>" while value holds empty or partial data, which must not replace data read
 // earlier. Every function takes an optional AbortSignal (passed to runGit).
 import { runGit, GitResult, GitOptions } from './runner';
+import { BlobReader } from './blobReader';
 import { extractTaskRefs, CommitRefs } from './commitRefs';
-import { splitLines, trim } from '../text';
+import { daysBetween, splitLines, trim } from '../text';
 
 export interface RepoResult<T> { value: T; error: string; }
 
@@ -17,7 +18,7 @@ export interface CommitInfo {
   refs: CommitRefs;
 }
 
-/** name: shown to the user ("feature/x", "origin/feature/x"); ref: full ref name given to git. */
+/** name: shown to the user ("feature/x", "origin/feature/x"); ref: full ref name (key/display); hash: what git is given. */
 export interface BranchTip { name: string; ref: string; hash: string; date: string; }
 
 export interface MainRef {
@@ -106,8 +107,12 @@ export async function resolveMain(repo: string, signal?: AbortSignal): Promise<R
   return { value: m, error };
 }
 
-/** Local + origin/* branches not merged into m.tipRef, minus default branch(es) and origin/HEAD. */
-export async function listOtherBranches(repo: string, m: MainRef, signal?: AbortSignal): Promise<RepoResult<BranchTip[]>> {
+/**
+ * Local + origin/* branches not merged into m.tipRef, minus default branch(es) and origin/HEAD.
+ * window: only branches whose tip is at most window.days old (0 = all) as of window.today.
+ */
+export async function listOtherBranches(repo: string, m: MainRef, signal?: AbortSignal,
+  window?: { today: string; days: number }): Promise<RepoResult<BranchTip[]>> {
   const tips: BranchTip[] = [];
   if (!m.name) return { value: tips, error: '' };
   const r = await runGit(repo, ['for-each-ref', `--no-merged=${m.tipRef}`,
@@ -124,6 +129,9 @@ export async function listOtherBranches(repo: string, m: MainRef, signal?: Abort
     else if (ref.startsWith('refs/remotes/')) name = ref.slice(13);
     else continue;
     if (ref === 'refs/remotes/origin/HEAD' || m.reachRefs.includes(ref)) continue;
+    // committerdate:short is in the committer's zone, so the age can be one day off at the bound (as the stale age is).
+    // Outside the window (tip older than `days`; a tip exactly `days` old is kept): not read at all.
+    if (window && window.days > 0 && daysBetween(f[2], window.today) > window.days) continue;
     tips.push({ name, ref, hash: f[1], date: f[2] });
   }
   return { value: tips, error: '' };
@@ -195,12 +203,16 @@ export async function listFiles(repo: string, ref: string, dir: string, signal?:
   return { value: files, error: '' };
 }
 
+/** A file of a tree listing: repo-relative path and blob object id. */
+export interface TreeBlob { path: string; oid: string; }
+
 /**
- * Files (blobs) at ref under any of pathspecs, recursively, repo-relative paths. A pathspec is a
+ * Files (blobs) at ref under any of pathspecs, recursively, with their object ids. A pathspec is a
  * directory with a trailing "/" or a file path; one that does not exist adds nothing. [] lists nothing.
+ * One ls-tree process per call; snapshot building lists through TreeReader (same result).
  */
-export async function listTree(repo: string, ref: string, pathspecs: string[], signal?: AbortSignal): Promise<RepoResult<string[]>> {
-  const files: string[] = [];
+export async function listTreeBlobs(repo: string, ref: string, pathspecs: string[], signal?: AbortSignal): Promise<RepoResult<TreeBlob[]>> {
+  const files: TreeBlob[] = [];
   if (pathspecs.length === 0) return { value: files, error: '' };
   // Paths follow the ref directly (see listFiles: no "--" after --end-of-options).
   const r = await runGit(repo, ['-c', 'core.quotepath=false', 'ls-tree', '-r', '-z', '--end-of-options', ref, ...pathspecs],
@@ -211,20 +223,31 @@ export async function listTree(repo: string, ref: string, pathspecs: string[], s
     const tab = rec.indexOf('\t');
     if (tab === -1) continue;
     const meta = rec.slice(0, tab).split(' ');
-    if (meta.length === 3 && meta[1] === 'blob') files.push(rec.slice(tab + 1));
+    if (meta.length === 3 && meta[1] === 'blob' && isHexHash(meta[2])) files.push({ path: rec.slice(tab + 1), oid: meta[2] });
   }
   return { value: files, error: '' };
 }
 
+/** listTreeBlobs, paths only. */
+export async function listTree(repo: string, ref: string, pathspecs: string[], signal?: AbortSignal): Promise<RepoResult<string[]>> {
+  const r = await listTreeBlobs(repo, ref, pathspecs, signal);
+  return { value: r.value.map((f) => f.path), error: r.error };
+}
+
 /**
- * Content of ref:path (UTF-8). value null when the blob cannot be read; a missing blob is not
- * an error, but git not starting, a timeout or a cancel is.
+ * Content of ref:path (UTF-8) through `git cat-file --batch`, which never stats the path (no
+ * Windows path limit). value null when the blob cannot be read; a missing blob is not an error,
+ * but git not starting, a timeout or a cancel is. Starts one cat-file process per call, so it is
+ * for single reads (tests, one-off lookups); snapshot building reads through one BlobReader.
  */
 export async function readBlob(repo: string, ref: string, path: string, signal?: AbortSignal): Promise<RepoResult<string | null>> {
-  const r = await runGit(repo, ['show', '--end-of-options', `${ref}:${path}`], { signal });
-  if (r.launched && !r.timedOut && !r.cancelled && r.code === 0) return { value: r.out, error: '' };
-  const error = r.launched && !r.timedOut && !r.cancelled ? '' : failure(r, 'git show');
-  return { value: null, error };
+  const reader = new BlobReader(repo, signal);
+  try {
+    const b = await reader.read(`${ref}:${path}`);
+    return { value: b.value === null ? null : b.value.text, error: b.error };
+  } finally {
+    await reader.close();
+  }
 }
 
 /** Fixed-string search in ref's tree. Exit 1 is "absent"; any other failure is 'error'. */

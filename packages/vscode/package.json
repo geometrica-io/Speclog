@@ -154,6 +154,12 @@
           "minimum": 1,
           "markdownDescription": "%config.staleBranchDays%"
         },
+        "speclog.branchDays": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 0,
+          "markdownDescription": "%config.branchDays%"
+        },
         "speclog.unverifiedDone": {
           "type": "string",
           "enum": [

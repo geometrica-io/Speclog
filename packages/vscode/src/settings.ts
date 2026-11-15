@@ -1,7 +1,7 @@
 // Reads the speclog.* settings into an EngineConfig, and the speclog.agent.* settings.
 import * as os from 'os';
 import * as vscode from 'vscode';
-import { EngineConfig, UnverifiedMode } from '@speclog/core';
+import { EngineConfig, UnverifiedMode, normalizeBranchDays } from '@speclog/core';
 import { TerminalCommandCheck, checkTerminalCommand } from './agentPure';
 import type { AgentTarget } from './agentPure';
 import { expandRoots } from './files';
@@ -34,6 +34,7 @@ export function readEngineConfig(trustCommits: Record<string, string>): EngineCo
     fetchIntervalSec: positive(c.get('fetch.intervalSeconds'), 300, 30),
     unverifiedMode: MODES.includes(mode as UnverifiedMode) ? (mode as UnverifiedMode) : 'unverified',
     staleBranchDays: positive(c.get('staleBranchDays'), 7, 1),
+    branchDays: normalizeBranchDays(c.get('branchDays')),
     trustCommits: { ...trustCommits },
   };
 }

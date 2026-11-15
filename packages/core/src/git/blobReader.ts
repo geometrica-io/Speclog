@@ -1,0 +1,238 @@
+// Blob contents through one long-lived `git cat-file --batch` process. Unlike `git show
+// <ref>:<path>`, cat-file never stats its argument as a file, so a path past the Windows path
+// limit is read; and one process serves every read of a snapshot build.
+import { ChildProcess, spawn } from 'child_process';
+import { DEFAULT_TIMEOUT_MS, PIPE_DRAIN_MAX_MS, killTree } from './runner';
+import type { RepoResult } from './repo';
+
+export interface Blob { oid: string; text: string; }
+/** An object of any type as git stores it (a tree is binary: see treeReader). */
+export interface RawObject { oid: string; type: string; data: Buffer; }
+
+interface Pending {
+  /** Answer as a RawObject (any type) instead of a Blob (blobs only, UTF-8). */
+  raw: boolean;
+  resolve: (r: RepoResult<Blob | RawObject | null>) => void;
+}
+
+/** `<oid> <type> <size>`: content of size bytes and a newline follow. */
+const HEADER_RE = /^([0-9a-fA-F]{40}|[0-9a-fA-F]{64}) (\S+) (\d+)$/;
+
+/**
+ * Reads blobs by object id or `<rev>:<path>` through one `git cat-file --batch` process, started
+ * on the first read. Same rules as runGit: GIT_TERMINAL_PROMPT=0, no window, the process tree is
+ * killed on abort or timeout (no output within timeoutMs while a read is pending, < 0: no limit).
+ * read() never rejects; after git dies (or an abort) every pending and later read returns an
+ * error. close() must be called when done (also on error and cancel); reads after it fail as closed.
+ */
+export class BlobReader {
+  private child: ChildProcess | undefined;
+  private readonly queue: Pending[] = [];
+  private chunks: Buffer[] = [];
+  private buffered = 0;
+  /** Header of the response being received: content size, oid, type; undefined before the header. */
+  private current: { size: number; oid: string; type: string } | undefined;
+  /** Why the reader stopped ("" while usable). */
+  private dead = '';
+  private exited = false;
+  private watchdog: NodeJS.Timeout | undefined;
+  private errTail = '';
+  private readonly timeoutMs: number;
+  private readonly command: string;
+  private readonly args: string[];
+  /** close() was called: no new reads. */
+  private closing = false;
+  private closeWaiters: Array<() => void> = [];
+  private readonly onAbort = (): void => this.die('cancelled');
+
+  /** opts.command / opts.args: tests only (a fake cat-file); default git cat-file --batch. */
+  constructor(private readonly repo: string, private readonly signal?: AbortSignal,
+    opts: { timeoutMs?: number; command?: string; args?: string[] } = {}) {
+    this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.command = opts.command ?? 'git';
+    this.args = opts.args ?? ['cat-file', '--batch'];
+  }
+
+  /** The git process id once started (tests). */
+  get pid(): number | undefined { return this.child?.pid; }
+
+  /**
+   * Content (UTF-8) of spec: an object id or `<rev>:<path>`. value null without an error when it
+   * names no blob (missing, ambiguous, not a blob) or cannot be requested (a newline in it).
+   */
+  read(spec: string): Promise<RepoResult<Blob | null>> {
+    return this.request(spec, false) as Promise<RepoResult<Blob | null>>;
+  }
+
+  /**
+   * Raw bytes, object id and type of spec (an object id, `<rev>:<path>` or `<rev>^{tree}`), for any
+   * object type. value null without an error under the same rules as read().
+   */
+  readRaw(spec: string): Promise<RepoResult<RawObject | null>> {
+    return this.request(spec, true) as Promise<RepoResult<RawObject | null>>;
+  }
+
+  private request(spec: string, raw: boolean): Promise<RepoResult<Blob | RawObject | null>> {
+    if (this.signal?.aborted) this.die('cancelled');
+    if (this.dead) return Promise.resolve(this.failed());
+    if (this.closing) return Promise.resolve({ value: null, error: 'git cat-file: closed' });
+    // One request per line: a newline (or a trailing CR, which git strips) cannot be sent.
+    if (spec === '' || spec.includes('\n') || spec.endsWith('\r')) return Promise.resolve({ value: null, error: '' });
+    if (!this.child && !this.start()) return Promise.resolve(this.failed());
+    return new Promise((resolve) => {
+      this.queue.push({ raw, resolve });
+      if (!this.watchdog) this.arm();
+      this.child!.stdin!.write(`${spec}\n`);
+    });
+  }
+
+  /** Ends the process: git exits on end of input; killed if it has not after a short wait. */
+  close(): Promise<void> {
+    this.closing = true;
+    if (!this.child || this.exited) {
+      this.die('closed');
+      return Promise.resolve();
+    }
+    if (this.queue.length > 0 || this.dead) {
+      this.die('closed');
+    } else {
+      this.child.stdin?.end();
+    }
+    return new Promise((resolve) => {
+      if (this.exited) { resolve(); return; }
+      let t: NodeJS.Timeout | undefined;
+      const done = () => { if (t) clearTimeout(t); resolve(); };
+      // Not exited in time: killed, and no longer waited for.
+      t = setTimeout(() => { this.die('closed'); this.closeWaiters = this.closeWaiters.filter((w) => w !== done); resolve(); },
+        PIPE_DRAIN_MAX_MS);
+      this.closeWaiters.push(done);
+    });
+  }
+
+  private failed(): RepoResult<null> {
+    return { value: null, error: `git cat-file: ${this.dead}` };
+  }
+
+  private start(): boolean {
+    let child: ChildProcess;
+    try {
+      child = spawn(this.command, this.args, {
+        cwd: this.repo,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        windowsHide: true,
+        // POSIX: own process group, so killTree reaches the whole tree.
+        detached: process.platform !== 'win32',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      this.dead = (e as Error).message || 'git could not be started';
+      return false;
+    }
+    this.child = child;
+    child.on('error', (e: Error) => {
+      if (child.pid === undefined) this.exited = true; // never started: no exit event follows
+      this.die(e.message || 'git could not be started');
+    });
+    child.stdin?.on('error', () => undefined); // EPIPE when git exits early: reported by exit
+    child.stdout?.on('data', (d: Buffer) => this.onData(d));
+    child.stderr?.on('data', (d: Buffer) => { this.errTail = (this.errTail + d.toString('utf8')).slice(-2000); });
+    const ended = (code: number | null) => {
+      const why = this.errTail.trim().split(/\r?\n/)[0] || `exit code ${code ?? -1}`;
+      this.die(this.closing ? 'closed' : why);
+    };
+    child.on('exit', (code) => {
+      this.exited = true;
+      // 'close' follows once the pipes end; a process holding them must not keep reads waiting.
+      const t = setTimeout(() => ended(code), PIPE_DRAIN_MAX_MS);
+      t.unref();
+      child.once('close', () => clearTimeout(t));
+    });
+    child.on('close', (code) => {
+      this.exited = true;
+      ended(code);
+    });
+    this.signal?.addEventListener('abort', this.onAbort, { once: true });
+    return true;
+  }
+
+  /** (Re)starts the no-progress timer while reads are pending (on each read, answer and output chunk). */
+  private arm(): void {
+    if (this.watchdog) clearTimeout(this.watchdog);
+    this.watchdog = undefined;
+    if (this.timeoutMs < 0 || this.queue.length === 0 || this.dead) return;
+    this.watchdog = setTimeout(() => this.die('timed out'), this.timeoutMs);
+  }
+
+  private onData(d: Buffer): void {
+    if (this.dead) return;
+    this.arm(); // output is flowing: a slow but moving blob is not a timeout
+    this.chunks.push(d);
+    this.buffered += d.length;
+    while (this.buffered > 0 && !this.dead) {
+      if (this.queue.length === 0) { this.die('unexpected output'); return; }
+      if (!this.current) {
+        const buf = this.take();
+        const nl = buf.indexOf(10);
+        if (nl === -1) return;
+        const header = buf.toString('utf8', 0, nl);
+        this.keep(buf.subarray(nl + 1));
+        const m = HEADER_RE.exec(header);
+        // "<spec> missing" / "<spec> ambiguous": nothing follows.
+        if (!m) { this.answer({ value: null, error: '' }); continue; }
+        this.current = { oid: m[1], type: m[2], size: Number(m[3]) };
+      }
+      const need = this.current.size + 1;
+      if (this.buffered < need) return;
+      const buf = this.take();
+      if (buf[need - 1] !== 10) { this.die('unexpected output'); return; }
+      const { oid, type, size } = this.current;
+      let value: Blob | RawObject | null;
+      if (this.queue[0].raw) value = { oid, type, data: Buffer.from(buf.subarray(0, size)) };
+      else value = type === 'blob' ? { oid, text: buf.toString('utf8', 0, size) } : null;
+      this.current = undefined;
+      this.keep(buf.subarray(need));
+      this.answer({ value, error: '' });
+    }
+  }
+
+  /** Everything buffered as one Buffer (kept buffered). */
+  private take(): Buffer {
+    if (this.chunks.length > 1) this.chunks = [Buffer.concat(this.chunks)];
+    return this.chunks[0] ?? Buffer.alloc(0);
+  }
+
+  /**
+   * Keeps rest (a view of a buffer just consumed) buffered. A small remainder is copied, so the
+   * large buffer it views (a whole blob) can be released.
+   */
+  private keep(rest: Buffer): void {
+    const copy = rest.length > 0 && rest.length * 2 < rest.buffer.byteLength;
+    this.chunks = rest.length > 0 ? [copy ? Buffer.from(rest) : rest] : [];
+    this.buffered = rest.length;
+  }
+
+  private answer(r: RepoResult<Blob | RawObject | null>): void {
+    this.queue.shift()!.resolve(r);
+    this.arm();
+  }
+
+  /** Stops for good: kills git unless it has exited, fails every pending read. */
+  private die(why: string): void {
+    if (!this.dead) {
+      this.dead = why;
+      if (this.watchdog) clearTimeout(this.watchdog);
+      this.watchdog = undefined;
+      this.signal?.removeEventListener('abort', this.onAbort);
+      if (this.child && !this.exited) killTree(this.child.pid);
+      this.child?.stdin?.destroy();
+      this.child?.stdout?.destroy();
+      this.child?.stderr?.destroy();
+      this.chunks = [];
+      this.buffered = 0;
+      for (const p of this.queue.splice(0)) p.resolve(this.failed());
+    }
+    if (this.exited || !this.child) {
+      for (const w of this.closeWaiters.splice(0)) w();
+    }
+  }
+}

@@ -18,6 +18,8 @@ export interface EngineConfig {
   fetchIntervalSec: number;
   unverifiedMode: UnverifiedMode;
   staleBranchDays: number;
+  /** Only unmerged branches with a commit in the last this-many days are read; 0 = all. */
+  branchDays: number;
   /** repoKey -> trust cutoff commit (Backlog.md / Spec Kit). */
   trustCommits: Record<string, string>;
 }
@@ -324,7 +326,7 @@ export class Engine {
       const repo = repos[i];
       let snap: RepoSnapshot;
       try {
-        snap = await this.deps.buildSnapshot(repo, { today, trustCommit: this.cfg.trustCommits[repo.key], signal });
+        snap = await this.deps.buildSnapshot(repo, { today, branchDays: this.cfg.branchDays, trustCommit: this.cfg.trustCommits[repo.key], signal });
       } catch (e) {
         snap = { ...emptySnapshot(repo), error: `snapshot: ${message(e)}` };
       }

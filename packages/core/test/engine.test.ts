@@ -49,6 +49,7 @@ function config(repos: TestRepo[], over: Partial<EngineConfig> = {}): EngineConf
     fetchIntervalSec: 300,
     unverifiedMode: 'unverified',
     staleBranchDays: 7,
+    branchDays: 30,
     trustCommits: {},
     ...over,
   };

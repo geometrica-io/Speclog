@@ -33,7 +33,6 @@
   "Detail": "Detail",
   "Done": "Done",
   "Done by git, open in the file": "Done by git, open in the file",
-  "Done in the file only": "Done in the file only",
   "Done written after the conversion": "Done written after the conversion",
   "Dropped": "Dropped",
   "Duplicate id in file": "Duplicate id in file",
@@ -143,7 +142,6 @@
   "Text gone, but the item is not done": "Text gone, but the item is not done",
   "Text missing, but the item is done": "Text missing, but the item is done",
   "Text still present, but the item is done": "Text still present, but the item is done",
-  "The file says done ({0}); no commit closes it": "The file says done ({0}); no commit closes it",
   "The file says done but there is no evidence in git.": "The file says done but there is no evidence in git.",
   "The item is already done.": "The item is already done.",
   "The item is already dropped.": "The item is already dropped.",
@@ -179,7 +177,7 @@
   "{0} (not found)": "{0} (not found)",
   "{0} / {1} shown": "{0} / {1} shown",
   "{0} days old; items: {1}": "{0} days old; items: {1}",
-  "{0} items are done only in the task files": "{0} items are done only in the task files",
+  "{0} items are done only in the task files, with no commit as evidence. Run \"Speclog: Trust current task files\" to trust these file statuses.": "{0} items are done only in the task files, with no commit as evidence. Run \"Speclog: Trust current task files\" to trust these file statuses.",
   "{0} repos · {1} items · {2} done": "{0} repos · {1} items · {2} done",
   "{0} unverified": "{0} unverified"
 }

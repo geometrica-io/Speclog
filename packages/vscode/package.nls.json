@@ -15,6 +15,7 @@
   "config.originFilter": "Only repositories whose `origin` URL contains one of these fragments (for example `github.com/owner/`). Empty: all repositories.",
   "config.fetch.enabled": "Fetch `origin` in the background. Only `refs/remotes/origin/*` is updated; the working tree is never touched.",
   "config.fetch.intervalSeconds": "Seconds between two background fetches of a repository.",
+  "config.branchDays": "Only unmerged branches with a commit in the last this-many days are read. Older branches are invisible to Speclog: they add no items, show no On branch and no stale-branch row. 0 reads every branch (slow in repositories with thousands of branches).",
   "config.staleBranchDays": "A branch with unmerged task work whose tip is older than this many days is listed under Attention.",
   "config.unverifiedDone": "How a `done` written by hand in Backlog.md or Spec Kit task files, without a `Task:` commit, is shown.",
   "config.unverifiedDone.unverified": "Shown as Unverified.",
