@@ -18,12 +18,13 @@ note: Replace "Screenshot pending." with a board screenshot (dark theme, several
 status: open
 size: S
 note: Marketplace publisher geometricaio (display name Geometrica.io), VSCE_PAT and OVSX_PAT repository secrets. The Open VSX namespace is created by release.yml on the first release if missing.
+evidence: Marketplace publisher geometricaio exists; GitHub secrets VSCE_PAT and OVSX_PAT set (2026-11-15); Open VSX agreement signed
 
 ## REL.4 Dry-run the release workflow
 status: open
 size: S
 depends: REL.3
-note: Remove "private": true from packages/vscode/package.json if vsce publish refuses it; run release.yml on a test tag first.
+note: Run release.yml manually (workflow_dispatch = dry run): build, test, package, create the Open VSX namespace, verify both tokens, publish nothing. vsce does not check "private": true.
 
 ## REL.5 Confirm CI is green on Windows, macOS and Linux
 status: open
