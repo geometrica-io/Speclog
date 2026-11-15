@@ -209,6 +209,7 @@ export interface TreeBlob { path: string; oid: string; }
 /**
  * Files (blobs) at ref under any of pathspecs, recursively, with their object ids. A pathspec is a
  * directory with a trailing "/" or a file path; one that does not exist adds nothing. [] lists nothing.
+ * One ls-tree process per call; snapshot building lists through TreeReader (same result).
  */
 export async function listTreeBlobs(repo: string, ref: string, pathspecs: string[], signal?: AbortSignal): Promise<RepoResult<TreeBlob[]>> {
   const files: TreeBlob[] = [];

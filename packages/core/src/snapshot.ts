@@ -6,9 +6,10 @@ import type { ParseCache, SourceFile, TaskSourceAdapter } from './adapters';
 import { createParseCache } from './adapters/files';
 import { mapLimit } from './discovery';
 import { BlobReader } from './git/blobReader';
+import { TreeReader } from './git/treeReader';
 import {
   BranchTip, CommitInfo, MainRef, TreeBlob, changedFilesSince, grepFixed, hasUncommittedChanges, listOtherBranches,
-  listTreeBlobs, logCommits, objectIds, resolveCommit, resolveMain, revList,
+  logCommits, objectIds, resolveCommit, resolveMain, revList,
 } from './git/repo';
 import { ParseIssue, Program, RECENT_DAYS, RepoInfo, SourceFormat } from './model';
 import { dayNumber, trim } from './text';
@@ -158,6 +159,8 @@ export async function buildSnapshot(repo: RepoInfo, o: SnapshotOptions): Promise
 
 async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cache: ParseCache): Promise<RepoSnapshot> {
   const { signal } = o;
+  // Task files are listed through the reader too: no ls-tree process per branch, shared subtrees read once.
+  const trees = new TreeReader(reader);
   const recentDays = o.recentDays ?? RECENT_DAYS;
   const snap = emptySnapshot(repo);
   let err = ''; // first git failure; becomes snap.error
@@ -199,7 +202,7 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
   };
   /** Lists the adapters' files at ref and parses them. */
   const readAt = async (ref: string, adapters: readonly TaskSourceAdapter[]) => {
-    const l = await listTreeBlobs(repo.path, ref, pathspecsOf(adapters), signal);
+    const l = await trees.listBlobs(ref, pathspecsOf(adapters));
     fail(l.error);
     return readPrograms(ref, l.value, adapters);
   };
@@ -219,7 +222,7 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
   if (!snap.main.name) return settle(); // no default branch (empty repo): not an error
 
   const tip = snap.main.tipRef;
-  const listed = await listTreeBlobs(repo.path, tip, allSpecs, signal);
+  const listed = await trees.listBlobs(tip, allSpecs);
   fail(listed.error);
   const paths = listed.value.map((f) => f.path);
   snap.formats = ADAPTERS.filter((a) => isPresent(a, paths)).map((a) => a.format);

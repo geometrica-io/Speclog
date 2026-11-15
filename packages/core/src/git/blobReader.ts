@@ -6,9 +6,13 @@ import { DEFAULT_TIMEOUT_MS, PIPE_DRAIN_MAX_MS, killTree } from './runner';
 import type { RepoResult } from './repo';
 
 export interface Blob { oid: string; text: string; }
+/** An object of any type as git stores it (a tree is binary: see treeReader). */
+export interface RawObject { oid: string; type: string; data: Buffer; }
 
 interface Pending {
-  resolve: (r: RepoResult<Blob | null>) => void;
+  /** Answer as a RawObject (any type) instead of a Blob (blobs only, UTF-8). */
+  raw: boolean;
+  resolve: (r: RepoResult<Blob | RawObject | null>) => void;
 }
 
 /** `<oid> <type> <size>`: content of size bytes and a newline follow. */
@@ -57,6 +61,18 @@ export class BlobReader {
    * names no blob (missing, ambiguous, not a blob) or cannot be requested (a newline in it).
    */
   read(spec: string): Promise<RepoResult<Blob | null>> {
+    return this.request(spec, false) as Promise<RepoResult<Blob | null>>;
+  }
+
+  /**
+   * Raw bytes, object id and type of spec (an object id, `<rev>:<path>` or `<rev>^{tree}`), for any
+   * object type. value null without an error under the same rules as read().
+   */
+  readRaw(spec: string): Promise<RepoResult<RawObject | null>> {
+    return this.request(spec, true) as Promise<RepoResult<RawObject | null>>;
+  }
+
+  private request(spec: string, raw: boolean): Promise<RepoResult<Blob | RawObject | null>> {
     if (this.signal?.aborted) this.die('cancelled');
     if (this.dead) return Promise.resolve(this.failed());
     if (this.closing) return Promise.resolve({ value: null, error: 'git cat-file: closed' });
@@ -64,7 +80,7 @@ export class BlobReader {
     if (spec === '' || spec.includes('\n') || spec.endsWith('\r')) return Promise.resolve({ value: null, error: '' });
     if (!this.child && !this.start()) return Promise.resolve(this.failed());
     return new Promise((resolve) => {
-      this.queue.push({ resolve });
+      this.queue.push({ raw, resolve });
       if (!this.watchdog) this.arm();
       this.child!.stdin!.write(`${spec}\n`);
     });
@@ -93,7 +109,7 @@ export class BlobReader {
     });
   }
 
-  private failed(): RepoResult<Blob | null> {
+  private failed(): RepoResult<null> {
     return { value: null, error: `git cat-file: ${this.dead}` };
   }
 
@@ -170,10 +186,12 @@ export class BlobReader {
       const buf = this.take();
       if (buf[need - 1] !== 10) { this.die('unexpected output'); return; }
       const { oid, type, size } = this.current;
-      const text = type === 'blob' ? buf.toString('utf8', 0, size) : null;
+      let value: Blob | RawObject | null;
+      if (this.queue[0].raw) value = { oid, type, data: Buffer.from(buf.subarray(0, size)) };
+      else value = type === 'blob' ? { oid, text: buf.toString('utf8', 0, size) } : null;
       this.current = undefined;
       this.keep(buf.subarray(need));
-      this.answer({ value: text === null ? null : { oid, text }, error: '' });
+      this.answer({ value, error: '' });
     }
   }
 
@@ -193,7 +211,7 @@ export class BlobReader {
     this.buffered = rest.length;
   }
 
-  private answer(r: RepoResult<Blob | null>): void {
+  private answer(r: RepoResult<Blob | RawObject | null>): void {
     this.queue.shift()!.resolve(r);
     this.arm();
   }
