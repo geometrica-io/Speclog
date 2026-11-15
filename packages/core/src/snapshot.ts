@@ -2,11 +2,13 @@
 // file format (ADAPTERS) and the per-repository trust cutoff of Backlog.md / Spec Kit (spec §4.5).
 // Everything is read from git (main tip + unmerged branches), never from the working tree.
 import { ADAPTERS, docsTasksAdapter } from './adapters';
-import type { SourceFile, TaskSourceAdapter } from './adapters';
+import type { ParseCache, SourceFile, TaskSourceAdapter } from './adapters';
+import { createParseCache } from './adapters/files';
 import { mapLimit } from './discovery';
+import { BlobReader } from './git/blobReader';
 import {
-  BranchTip, CommitInfo, MainRef, changedFilesSince, grepFixed, hasUncommittedChanges, listOtherBranches,
-  listTree, logCommits, objectIds, readBlob, resolveCommit, resolveMain, revList,
+  BranchTip, CommitInfo, MainRef, TreeBlob, changedFilesSince, grepFixed, hasUncommittedChanges, listOtherBranches,
+  listTreeBlobs, logCommits, objectIds, resolveCommit, resolveMain, revList,
 } from './git/repo';
 import { ParseIssue, Program, RECENT_DAYS, RepoInfo, SourceFormat } from './model';
 import { dayNumber, trim } from './text';
@@ -63,11 +65,14 @@ export interface SnapshotOptions {
   trustCommit?: string;
   /** Aborting kills a running git call; the build then returns with error "cancelled" and must be discarded. */
   signal?: AbortSignal;
+  /** Per-file parse memo for this build (tests: to count parses); default: a new one per build. */
+  parseCache?: ParseCache;
 }
 
 const SINCE_FILE = 'docs/tasks/.since';
 const TRUST_FORMATS: readonly SourceFormat[] = ['backlogMd', 'specKit'];
-const BLOB_READ_CONCURRENCY = 8;
+/** Reads in flight at once on the one cat-file process. */
+const BLOB_READ_CONCURRENCY = 32;
 
 /** A snapshot with no data: the repository only. */
 export function emptySnapshot(repo: RepoInfo): RepoSnapshot {
@@ -127,7 +132,20 @@ function dateOfDay(n: number): string {
   return new Date(n * 86400000).toISOString().slice(0, 10);
 }
 
+/**
+ * Reads repo's snapshot from git. Task files are read through one `git cat-file --batch` process,
+ * ended when the build ends (also on error and cancel); each distinct file is parsed once.
+ */
 export async function buildSnapshot(repo: RepoInfo, o: SnapshotOptions): Promise<RepoSnapshot> {
+  const reader = new BlobReader(repo.path, o.signal);
+  try {
+    return await build(repo, o, reader, o.parseCache ?? createParseCache());
+  } finally {
+    await reader.close();
+  }
+}
+
+async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cache: ParseCache): Promise<RepoSnapshot> {
   const { signal } = o;
   const recentDays = o.recentDays ?? RECENT_DAYS;
   const snap = emptySnapshot(repo);
@@ -145,20 +163,24 @@ export async function buildSnapshot(repo: RepoInfo, o: SnapshotOptions): Promise
     return snap;
   };
 
-  /** Parses the files of adapters among paths at ref; a file that cannot be read sets the error. */
-  const readPrograms = async (ref: string, paths: string[], adapters: readonly TaskSourceAdapter[]) => {
+  /** Parses the files of adapters among files (listed at ref); a file that cannot be read sets the error. */
+  const readPrograms = async (ref: string, files: TreeBlob[], adapters: readonly TaskSourceAdapter[]) => {
     const programs: Program[] = [];
     const issues: ParseIssue[] = [];
+    const oidOf = new Map(files.map((f) => [f.path, f.oid]));
+    const paths = files.map((f) => f.path);
     for (const a of adapters) {
       const selected = a.select(paths);
       if (selected.length === 0) continue;
-      const read = await mapLimit(selected, BLOB_READ_CONCURRENCY, async (path) => {
-        const b = await readBlob(repo.path, ref, path, signal);
+      const read = await mapLimit(selected, BLOB_READ_CONCURRENCY, async (path): Promise<SourceFile | null> => {
+        // By object id: the request never holds the path (any characters, any length).
+        const oid = oidOf.get(path)!;
+        const b = await reader.read(oid);
         if (b.error) fail(b.error);
         else if (b.value === null) fail(`could not read ${path} on ${ref}`);
-        return b.value === null ? null : { path, text: b.value };
+        return b.value === null ? null : { path, text: b.value.text, oid };
       });
-      const r = a.parse(read.filter((f): f is SourceFile => f !== null));
+      const r = a.parse(read.filter((f): f is SourceFile => f !== null), cache);
       programs.push(...r.programs);
       issues.push(...r.issues);
     }
@@ -166,7 +188,7 @@ export async function buildSnapshot(repo: RepoInfo, o: SnapshotOptions): Promise
   };
   /** Lists the adapters' files at ref and parses them. */
   const readAt = async (ref: string, adapters: readonly TaskSourceAdapter[]) => {
-    const l = await listTree(repo.path, ref, pathspecsOf(adapters), signal);
+    const l = await listTreeBlobs(repo.path, ref, pathspecsOf(adapters), signal);
     fail(l.error);
     return readPrograms(ref, l.value, adapters);
   };
@@ -186,12 +208,12 @@ export async function buildSnapshot(repo: RepoInfo, o: SnapshotOptions): Promise
   if (!snap.main.name) return settle(); // no default branch (empty repo): not an error
 
   const tip = snap.main.tipRef;
-  const listed = await listTree(repo.path, tip, allSpecs, signal);
+  const listed = await listTreeBlobs(repo.path, tip, allSpecs, signal);
   fail(listed.error);
-  const paths = listed.value;
+  const paths = listed.value.map((f) => f.path);
   snap.formats = ADAPTERS.filter((a) => isPresent(a, paths)).map((a) => a.format);
   snap.hasTaskFiles = snap.formats.length > 0;
-  const main = await readPrograms(tip, paths, ADAPTERS);
+  const main = await readPrograms(tip, listed.value, ADAPTERS);
   snap.programs = main.programs;
   snap.issues = main.issues;
   if (cancelled()) return snap;
@@ -305,13 +327,14 @@ export async function buildSnapshot(repo: RepoInfo, o: SnapshotOptions): Promise
   const cutoffs: string[] = [];
 
   // docs/tasks/.since history cut: a commit on the main branch.
-  snap.hasSinceFile = paths.includes(SINCE_FILE);
-  if (snap.hasSinceFile) {
-    const b = await readBlob(repo.path, tip, SINCE_FILE, signal);
+  const sinceBlob = listed.value.find((f) => f.path === SINCE_FILE);
+  snap.hasSinceFile = sinceBlob !== undefined;
+  if (sinceBlob) {
+    const b = await reader.read(sinceBlob.oid);
     if (b.error || b.value === null) {
       fail(b.error || `could not read ${SINCE_FILE} on ${tip}`);
     } else {
-      const value = sinceValue(b.value);
+      const value = sinceValue(b.value.text);
       const full = await resolveCutoff(value, (why) => snap.issues.push(
         { path: SINCE_FILE, line: 1, kind: 'bad-since', detail: value ? `${value}: ${why}` : why }));
       if (full) {

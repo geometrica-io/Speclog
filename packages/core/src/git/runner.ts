@@ -16,14 +16,14 @@ export interface GitOptions {
   survivesCancel?: boolean;
 }
 
-const DEFAULT_TIMEOUT_MS = 120000;
+export const DEFAULT_TIMEOUT_MS = 120000;
 /**
  * After git exits normally, wait until the pipes held by grandchildren have been idle this long
  * (restarted by each chunk), but never longer than PIPE_DRAIN_MAX_MS after the exit. After a
  * kill (timeout / abort) the wait is a one-shot PIPE_GRACE_MS.
  */
 const PIPE_GRACE_MS = 200;
-const PIPE_DRAIN_MAX_MS = 2000;
+export const PIPE_DRAIN_MAX_MS = 2000;
 
 /**
  * Internal test seam (not exported from the package): overrides the pipe-drain limits so tests
@@ -31,7 +31,8 @@ const PIPE_DRAIN_MAX_MS = 2000;
  */
 export interface RunnerTuning { pipeGraceMs?: number; pipeDrainMaxMs?: number; }
 
-function killTree(pid: number | undefined): void {
+/** Kills pid and its whole process tree (taskkill /T on Windows, the process group elsewhere). */
+export function killTree(pid: number | undefined): void {
   if (pid === undefined) return;
   try {
     if (process.platform === 'win32') {

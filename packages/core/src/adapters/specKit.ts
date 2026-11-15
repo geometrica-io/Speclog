@@ -1,7 +1,7 @@
 import type { Item, ParseIssue, Program } from '../model';
 import { splitLines, trim } from '../text';
-import { sortedByPath } from './files';
-import type { SourceFile, TaskSourceAdapter } from './types';
+import { memo, sortedByPath } from './files';
+import type { ParseCache, SourceFile, TaskSourceAdapter } from './types';
 
 /**
  * GitHub Spec Kit adapter (spec §4.3). Format checked against spec-kit v1.4.0
@@ -98,7 +98,7 @@ export const specKitAdapter: TaskSourceAdapter = {
   select(paths: string[]): string[] {
     return paths.filter((p) => FILE_RE.test(p));
   },
-  parse(files: SourceFile[]) {
+  parse(files: SourceFile[], cache?: ParseCache) {
     const issues: ParseIssue[] = [];
     const tasks = new Map<string, SourceFile>();
     const specs = new Map<string, SourceFile>();
@@ -113,7 +113,13 @@ export const specKitAdapter: TaskSourceAdapter = {
         issues.push({ path: file.path, line: 1, kind: 'syntax', detail: `feature folder "${feature}" is not a valid id prefix` });
         continue;
       }
-      programs.push(parseTasks(feature, file, specs.get(feature), issues));
+      const spec = specs.get(feature);
+      const r = memo(cache, 'specKit', [file, spec], () => {
+        const own: ParseIssue[] = [];
+        return { program: parseTasks(feature, file, spec, own), issues: own };
+      });
+      programs.push(r.program);
+      issues.push(...r.issues);
     }
     return { programs, issues };
   },
