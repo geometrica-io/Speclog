@@ -44,8 +44,11 @@ jobs:
       - name: Publish to the VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' && github.event_name == 'push' }}
         run: npx vsce publish --packagePath packages/vscode/speclog-*.vsix
+      # Open VSX steps run once the repository variable OVSX_TRUSTED is "true" (set it after the
+      # namespace is verified and the trusted publisher is registered on open-vsx.org).
       - name: Verify the Open VSX trusted publisher
+        if: ${{ vars.OVSX_TRUSTED == 'true' }}
         run: node scripts/check-ovsx-trusted-publisher.cjs packages/vscode/package.json
       - name: Publish to Open VSX
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ vars.OVSX_TRUSTED == 'true' && github.event_name == 'push' }}
         run: npx ovsx publish packages/vscode/speclog-*.vsix --trusted-publishing

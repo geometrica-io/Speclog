@@ -42,3 +42,9 @@ status: open
 size: S
 depends: REL.1, REL.2, REL.4, REL.5, REL.6
 note: Marketplace and Open VSX with --pre-release; move to a regular release in 0.2 after first feedback.
+
+## REL.8 Publish to Open VSX
+status: open
+size: S
+depends: REL.7
+note: Claim the geometricaio namespace on open-vsx.org (Claim Ownership), then register the trusted publisher (geometrica-io/Speclog, release.yml), set the repository variable OVSX_TRUSTED=true, and rerun the release for the published version.
