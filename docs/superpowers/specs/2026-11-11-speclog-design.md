@@ -221,7 +221,7 @@ only touches `backlog/` gets no hook warning but is listed in Attention.
   cases + hook tests); git tests use real repositories in temporary folders.
 - The extension is a single ("universal") package; no native binaries.
 - CI: GitHub Actions — tests on Windows / macOS / Linux; on a tag, publish with `vsce` and `ovsx`
-  (publisher name `geometrica`, created at release time).
+  (publisher ID `geometricaio`, display name "Geometrica.io").
 
 ## 9. Acceptance criteria (v1)
 

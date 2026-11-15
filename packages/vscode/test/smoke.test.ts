@@ -19,8 +19,8 @@ async function waitFor(what: string, cond: () => boolean): Promise<void> {
 }
 
 export async function run(): Promise<void> {
-  const ext = vscode.extensions.getExtension<SpeclogApi>('geometrica.speclog');
-  assert.ok(ext, 'extension geometrica.speclog is installed');
+  const ext = vscode.extensions.getExtension<SpeclogApi>('geometricaio.speclog');
+  assert.ok(ext, 'extension geometricaio.speclog is installed');
   const api = await ext.activate();
   assert.ok(ext.isActive, 'extension is active');
   console.log('ok - the extension activates');

@@ -3,7 +3,7 @@
   "displayName": "Speclog",
   "description": "%description%",
   "version": "0.1.0",
-  "publisher": "geometrica",
+  "publisher": "geometricaio",
   "license": "MIT",
   "repository": {
     "type": "git",

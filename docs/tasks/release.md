@@ -14,10 +14,10 @@ status: open
 size: S
 note: Replace "Screenshot pending." with a board screenshot (dark theme, several repositories). Use a generated demo workspace of fictional repositories and tasks (scripts/demo-workspace.mjs); never real repositories.
 
-## REL.3 Set up the geometrica publisher and tokens
+## REL.3 Set up the geometricaio publisher and tokens
 status: open
 size: S
-note: Marketplace publisher geometrica, VSCE_PAT and OVSX_PAT repository secrets, Open VSX namespace.
+note: Marketplace publisher geometricaio (display name Geometrica.io), VSCE_PAT and OVSX_PAT repository secrets, Open VSX namespace.
 
 ## REL.4 Dry-run the release workflow
 status: open

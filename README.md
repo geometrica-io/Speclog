@@ -17,7 +17,7 @@ Speclog reads the formats you already use and never modifies a task file.
 
 ## Install
 
-- Marketplace / Open VSX: search for **Speclog** (`geometrica.speclog`).
+- Marketplace / Open VSX: search for **Speclog** (`geometricaio.speclog`).
 - From a file: `code --install-extension speclog-0.1.0.vsix`.
 
 Works in VS Code and VS Code based editors (Antigravity, Cursor, Windsurf, VSCodium) on Windows, macOS
