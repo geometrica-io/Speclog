@@ -57,9 +57,18 @@ export interface RepoSnapshot {
   error: string;
 }
 
+export const DEFAULT_BRANCH_DAYS = 30;
+
+/** The speclog.branchDays value: a non-negative integer, anything else gives the default. */
+export function normalizeBranchDays(v: unknown): number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : DEFAULT_BRANCH_DAYS;
+}
+
 export interface SnapshotOptions {
   /** YYYY-MM-DD */
   today: string;
+  /** Only unmerged branches whose tip is at most this many days old are read; 0 = all. Default 30. */
+  branchDays?: number;
   recentDays?: number;
   /** Trust cutoff (Backlog.md / Spec Kit), any commit-ish hash prefix. */
   trustCommit?: string;
@@ -228,7 +237,8 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
 
   // Branches not merged into main. A format's task files are read on a branch only when they
   // differ from main's (identical files add no items and no new issues).
-  const other = await listOtherBranches(repo.path, snap.main, signal);
+  const other = await listOtherBranches(repo.path, snap.main, signal,
+    { today: o.today, days: normalizeBranchDays(o.branchDays) });
   fail(other.error);
   const tips = other.value;
   const specPaths = ADAPTERS.map((a) => a.pathspecs.map((p) => p.replace(/\/+$/, '')));

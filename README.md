@@ -163,6 +163,7 @@ template unless it contains `{guards}`.
 | `speclog.fetch.enabled` | `true` | Fetch `origin` in the background. Only `refs/remotes/origin/*` is updated; the working tree is never touched. |
 | `speclog.fetch.intervalSeconds` | `300` | Seconds between two background fetches of a repository (minimum 30). |
 | `speclog.staleBranchDays` | `7` | A branch with unmerged task work older than this many days is listed under Attention (minimum 1). |
+| `speclog.branchDays` | `30` | Only unmerged branches with a commit in the last this many days are read; older branches add no items, show no On branch and no stale row. `0` reads all branches (slow with thousands of branches). Minimum 0. |
 | `speclog.unverifiedDone` | `"unverified"` | How a hand-written "done" without a `Task:` commit is shown (see Statuses). |
 | `speclog.agent.target` | `"auto"` | Where Send to agent delivers the prompt: `auto`, `chat`, `terminal` or `clipboard` (see Send to agent). |
 | `speclog.agent.terminalCommand` | `["claude"]` | The `terminal` target's command: executable first (a name on `PATH` or an absolute path), then fixed arguments (for example `["claude", "--model", "opus"]`). Never split from a string. A per-machine setting (`machine-overridable`). |

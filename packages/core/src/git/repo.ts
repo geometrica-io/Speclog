@@ -5,7 +5,7 @@
 import { runGit, GitResult, GitOptions } from './runner';
 import { BlobReader } from './blobReader';
 import { extractTaskRefs, CommitRefs } from './commitRefs';
-import { splitLines, trim } from '../text';
+import { daysBetween, splitLines, trim } from '../text';
 
 export interface RepoResult<T> { value: T; error: string; }
 
@@ -107,8 +107,12 @@ export async function resolveMain(repo: string, signal?: AbortSignal): Promise<R
   return { value: m, error };
 }
 
-/** Local + origin/* branches not merged into m.tipRef, minus default branch(es) and origin/HEAD. */
-export async function listOtherBranches(repo: string, m: MainRef, signal?: AbortSignal): Promise<RepoResult<BranchTip[]>> {
+/**
+ * Local + origin/* branches not merged into m.tipRef, minus default branch(es) and origin/HEAD.
+ * window: only branches whose tip is at most window.days old (0 = all) as of window.today.
+ */
+export async function listOtherBranches(repo: string, m: MainRef, signal?: AbortSignal,
+  window?: { today: string; days: number }): Promise<RepoResult<BranchTip[]>> {
   const tips: BranchTip[] = [];
   if (!m.name) return { value: tips, error: '' };
   const r = await runGit(repo, ['for-each-ref', `--no-merged=${m.tipRef}`,
@@ -125,6 +129,8 @@ export async function listOtherBranches(repo: string, m: MainRef, signal?: Abort
     else if (ref.startsWith('refs/remotes/')) name = ref.slice(13);
     else continue;
     if (ref === 'refs/remotes/origin/HEAD' || m.reachRefs.includes(ref)) continue;
+    // Outside the window (tip older than `days`; a tip exactly `days` old is kept): not read at all.
+    if (window && window.days > 0 && daysBetween(f[2], window.today) > window.days) continue;
     tips.push({ name, ref, hash: f[1], date: f[2] });
   }
   return { value: tips, error: '' };

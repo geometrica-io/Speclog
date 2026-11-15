@@ -182,6 +182,9 @@ only touches `backlog/` gets no hook warning but is listed in Attention.
 - `speclog.fetch.enabled` (default on), `speclog.fetch.intervalSeconds` (300). Fetch only updates
   `origin` remote refs; never touches the working tree. A repository without `origin` is never fetched
   and shows no fetch state.
+- `speclog.branchDays` (default 30, `0` = all): only unmerged branches whose tip commit is at most this many days old
+  are read (inclusive); older branches are invisible (no items, no On branch, no stale row). Agent-driven repositories
+  can hold thousands of unmerged branches, and reading them all ran out of memory.
 - Settings in VS Code settings; UI state in `workspaceState`/`globalState`. Nothing is written to repositories.
 - **Repository name and key (my decision):** the repository name is the repo name in the `origin` URL
   (e.g. `StructuralFEASuite`); without `origin`, the folder name. `Task: <Name>:<id>` resolves by name,

@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildSnapshot, keepLastGood, RepoSnapshot } from '../src/snapshot';
+import { buildSnapshot, keepLastGood, normalizeBranchDays, DEFAULT_BRANCH_DAYS, RepoSnapshot } from '../src/snapshot';
 import type { Program, RepoInfo } from '../src/model';
 import { TestRepo, TestRemote } from './helpers/testRepo';
 import { resolveAll } from '../src/status';
@@ -89,6 +89,43 @@ describe('snapshot', () => {
     expect(s.branches.length).toBe(1);
     expect(itemIds(s.branches[0].programs)).toContain('N1');
   }, T);
+
+  describe('branch window', () => {
+    /** main plus one branch whose only commit is `age` days old (noon, so the local date is stable). */
+    async function aged(age: number): Promise<TestRepo> {
+      const r = await repo();
+      await r.commit('init', { 'docs/tasks/a.md': file(item('A1')) });
+      await r.branch('feature/old');
+      await r.commit('add', { 'docs/tasks/a.md': file(item('A1') + item('N1')) }, `${daysAgo(age)}T12:00:00`);
+      await r.checkout('main');
+      return r;
+    }
+    it('ignores a 40-day-old branch at the default window', async () => {
+      const r = await aged(40);
+      const s = await buildSnapshot(info(r), { today: today() });
+      expect(s.branches).toEqual([]);
+    }, T);
+    it('reads it with branchDays 0 (all) and 60', async () => {
+      const r = await aged(40);
+      for (const branchDays of [0, 60]) {
+        const s = await buildSnapshot(info(r), { today: today(), branchDays });
+        expect(s.branches.length).toBe(1);
+        expect(itemIds(s.branches[0].programs)).toContain('N1');
+      }
+    }, T);
+    it('keeps a tip exactly branchDays old and drops one day older', async () => {
+      const r = await aged(30);
+      expect((await buildSnapshot(info(r), { today: today() })).branches.length).toBe(1);
+      const r2 = await aged(31);
+      expect((await buildSnapshot(info(r2), { today: today() })).branches).toEqual([]);
+    }, T);
+    it('normalizes the setting: invalid values give the default', () => {
+      expect(DEFAULT_BRANCH_DAYS).toBe(30);
+      for (const v of [undefined, null, 'x', -1, 1.5, NaN, Infinity]) expect(normalizeBranchDays(v)).toBe(30);
+      expect(normalizeBranchDays(0)).toBe(0);
+      expect(normalizeBranchDays(60)).toBe(60);
+    });
+  });
 
   it('branch commits exclude main', async () => {
     const r = await repo();
