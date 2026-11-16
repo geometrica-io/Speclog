@@ -29,10 +29,18 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match packages/vscode version v$version" >&2
             exit 1
           fi
+      # Pre-release convention (VS Code): an odd minor version (0.1.x, 0.3.x) is a pre-release, an even
+      # one (0.2.x) a regular release. PRE is passed to packaging and to both publish commands.
+      - name: Decide pre-release from the version
+        run: |
+          minor=$(node -p "require('./packages/vscode/package.json').version.split('.')[1]")
+          if [ $((minor % 2)) -eq 1 ]; then pre='--pre-release'; else pre=''; fi
+          echo "PRE=$pre" >> "$GITHUB_ENV"
+          echo "Version minor $minor: ${pre:-regular release}"
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - run: npm run package
+      - run: npm run package -- $PRE
       - uses: actions/upload-artifact@v4
         with:
           name: speclog-vsix
@@ -43,7 +51,7 @@ jobs:
         run: npx vsce verify-pat "$(node -p "require('./packages/vscode/package.json').publisher")" -p "$VSCE_PAT"
       - name: Publish to the VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' && github.event_name == 'push' }}
-        run: npx vsce publish --packagePath packages/vscode/speclog-*.vsix
+        run: npx vsce publish --packagePath packages/vscode/speclog-*.vsix $PRE
       # Open VSX steps run once the repository variable OVSX_TRUSTED is "true" (set it after the
       # namespace is verified and the trusted publisher is registered on open-vsx.org).
       - name: Verify the Open VSX trusted publisher
@@ -51,4 +59,4 @@ jobs:
         run: node scripts/check-ovsx-trusted-publisher.cjs packages/vscode/package.json
       - name: Publish to Open VSX
         if: ${{ vars.OVSX_TRUSTED == 'true' && github.event_name == 'push' }}
-        run: npx ovsx publish packages/vscode/speclog-*.vsix --trusted-publishing
+        run: npx ovsx publish packages/vscode/speclog-*.vsix --trusted-publishing $PRE

@@ -43,7 +43,7 @@ evidence: scan of six public repos (MrLesk/Backlog.md, eser/stack, a2aproject/a2
 status: open
 size: S
 depends: REL.1, REL.2, REL.4, REL.5, REL.6
-note: Marketplace and Open VSX with --pre-release; move to a regular release in 0.2 after first feedback.
+note: Marketplace with --pre-release (release.yml: odd minor = pre-release, even = regular; 0.1.x is pre-release); Open VSX follows in REL.8. Tag v0.1.0 to publish. Move to a regular release in 0.2 after first feedback.
 
 ## REL.8 Publish to Open VSX
 status: open
