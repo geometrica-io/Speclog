@@ -129,6 +129,7 @@ describe('Backlog.md adapter', () => {
     expect(t1.group).toBe('First Release'); // milestone id m-1 resolved via backlog/milestones/
     expect(t1.priority).toBe('high');
     expect(t1.line).toBe(1);
+    expect(t1.file).toBe('backlog/tasks/task-1 - Set-up-the-project.md'); // its own file, not the program's folder
     const t2 = byId(r.programs, 'TASK-2')!; // '@alice' reporter is accepted like Backlog.md does
     expect(t2.title).toBe('Add login form');
     expect(t2.area).toBe('frontend');

@@ -3,7 +3,13 @@
 All notable changes to Speclog are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.0] - Unreleased
+## [Unreleased]
+
+### Fixed
+- Backlog.md items show their own task file in the property table and in the agent prompt, not the
+  `backlog/` folder.
+
+## [0.1.0] - 2026-11-16 (pre-release)
 
 ### Added
 - One board for the tasks of all repositories in the workspace and in `speclog.roots`, with Program,

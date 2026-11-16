@@ -1,7 +1,7 @@
 // Send to agent: decides whether an item may be handed to a coding agent, and what the prompt must warn about.
 import { findDependency } from './status';
 import type { ResolvedItem, Workspace } from './status';
-import type { SourceFormat } from './model';
+import { itemFile, type SourceFormat } from './model';
 
 export type GuardKind = 'decision' | 'openDepends' | 'onBranch' | 'unverified';
 
@@ -132,7 +132,7 @@ export function placeholderValues(w: Workspace, r: ResolvedItem): Record<string,
     size: it.size,
     priority: it.priority,
     area: it.area,
-    file: r.program.path.split('\\').join('/'),
+    file: itemFile(r.program, it).split('\\').join('/'),
     line: String(it.line),
     branch: sourceBranch(w, r),
     workBranch: r.branchOnly ? sourceBranch(w, r) || (r.branches[0] ?? '') : r.status === 'onBranch' ? (r.branches[0] ?? '') : '',

@@ -218,6 +218,7 @@ function parseDir(dir: string, files: SourceFile[], config: SourceFile | undefin
     const nameMatch = FILE_ID_RE.exec(c.name);
 
     const it = newItem();
+    it.file = f.path;
     it.id = str(d.id) || (nameMatch ? nameMatch[1] : '');
     if (it.id === '') { issue(1, 'syntax', 'no id in the front matter or the file name'); continue; }
     if (!ID_RE.test(it.id)) { issue(1, 'syntax', `invalid id "${it.id}"`); continue; }

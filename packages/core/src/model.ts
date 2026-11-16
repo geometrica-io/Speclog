@@ -29,6 +29,13 @@ export interface Item {
   historyCommit: string;
   depends: string[];
   line: number;
+  /** Repo-relative file holding this item when it is not the program's path (Backlog.md: one file per task). */
+  file?: string;
+}
+
+/** Repo-relative path of the file that holds the item. */
+export function itemFile(program: { path: string }, item: { file?: string }): string {
+  return item.file || program.path;
 }
 
 export interface Program {

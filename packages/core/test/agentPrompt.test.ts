@@ -170,6 +170,14 @@ describe('buildAgentPrompt', () => {
     expect(t.unknownPlaceholders).toEqual([]);
   });
 
+  it('a Backlog.md item cites its own task file, not the backlog folder', () => {
+    const { w, r } = mk({ id: 'task-12', line: 1, file: 'backlog/tasks/task-12 - Payment-flow.md' },
+      { path: 'backlog/', format: 'backlogMd' });
+    const t = buildAgentPrompt(w, r, '');
+    expect(t.text).toContain('main:backlog/tasks/task-12 - Payment-flow.md:1');
+    expect(buildAgentPrompt(w, r, '{file}').text).toBe('backlog/tasks/task-12 - Payment-flow.md');
+  });
+
   it('backlog and spec kit closing rules mention marking the file', () => {
     expect(closingRules('backlogMd', 'task-12')).toContain('Task: task-12');
     expect(closingRules('backlogMd', 'task-12')).toContain('status field');
