@@ -44,6 +44,7 @@ status: open
 size: S
 depends: REL.1, REL.2, REL.4, REL.5, REL.6
 note: Marketplace with --pre-release (release.yml: odd minor = pre-release, even = regular; 0.1.x is pre-release); Open VSX follows in REL.8. Tag v0.1.0 to publish. Move to a regular release in 0.2 after first feedback.
+evidence: tag v0.1.0, release run 43933846968 — "Published geometricaio.speclog v0.1.0." as a pre-release on the VS Code Marketplace (2026-11-16)
 
 ## REL.8 Publish to Open VSX
 status: open
