@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,12 +52,20 @@ jobs:
         run: npx vsce verify-pat "$(node -p "require('./packages/vscode/package.json').publisher")" -p "$VSCE_PAT"
       - name: Publish to the VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' && github.event_name == 'push' }}
-        run: npx vsce publish --packagePath packages/vscode/speclog-*.vsix $PRE
-      # Open VSX steps run once the repository variable OVSX_TRUSTED is "true" (set it after the
-      # namespace is verified and the trusted publisher is registered on open-vsx.org).
+        run: npx vsce publish --packagePath packages/vscode/speclog-*.vsix --skip-duplicate $PRE
+      # Open VSX: through the trusted publisher once the repository variable OVSX_TRUSTED is "true".
+      # Open VSX registers a trusted publisher only for an extension that already has a version there,
+      # so the first upload uses the OVSX_PAT secret; after that, register the trusted publisher, set
+      # OVSX_TRUSTED and delete OVSX_PAT.
       - name: Verify the Open VSX trusted publisher
         if: ${{ vars.OVSX_TRUSTED == 'true' }}
         run: node scripts/check-ovsx-trusted-publisher.cjs packages/vscode/package.json
-      - name: Publish to Open VSX
+      - name: Verify the Open VSX token
+        if: ${{ vars.OVSX_TRUSTED != 'true' && env.OVSX_PAT != '' }}
+        run: npx ovsx verify-pat "$(node -p "require('./packages/vscode/package.json').publisher")" -p "$OVSX_PAT"
+      - name: Publish to Open VSX (trusted publisher)
         if: ${{ vars.OVSX_TRUSTED == 'true' && github.event_name == 'push' }}
-        run: npx ovsx publish packages/vscode/speclog-*.vsix --trusted-publishing $PRE
+        run: npx ovsx publish packages/vscode/speclog-*.vsix --trusted-publishing --skip-duplicate $PRE
+      - name: Publish to Open VSX (token)
+        if: ${{ vars.OVSX_TRUSTED != 'true' && env.OVSX_PAT != '' && github.event_name == 'push' }}
+        run: npx ovsx publish packages/vscode/speclog-*.vsix -p "$OVSX_PAT" --skip-duplicate $PRE
