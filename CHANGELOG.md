@@ -3,7 +3,10 @@
 All notable changes to Speclog are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.1] - 2026-11-17 (pre-release)
+
+### Added
+- Published on Open VSX (VSCodium, Cursor, Windsurf, Antigravity and other editors that use it).
 
 ### Fixed
 - Backlog.md items show their own task file in the property table and in the agent prompt, not the
