@@ -51,3 +51,10 @@ status: open
 size: S
 depends: REL.7
 note: Claim the geometricaio namespace on open-vsx.org (Claim Ownership), then register the trusted publisher (geometrica-io/Speclog, release.yml), set the repository variable OVSX_TRUSTED=true, and rerun the release for the published version.
+evidence: tag v0.1.1, release run 44172509376 published with OVSX_PAT; open-vsx.org/api/geometricaio/speclog returns 0.1.1, preRelease true, verified true (2026-11-18)
+
+## REL.9 Switch Open VSX publishing to the trusted publisher
+status: open
+size: S
+depends: REL.8
+note: Open VSX registers a trusted publisher only for an extension that already has a version there, so 0.1.1 went out with OVSX_PAT. On open-vsx.org register the trusted publisher (geometrica-io/Speclog, release.yml), set the repository variable OVSX_TRUSTED=true, run release.yml manually (dry run verifies it), then delete the OVSX_PAT secret.
