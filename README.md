@@ -7,6 +7,11 @@ verifies each task's status from git. A task is **Done** only when a commit on t
 (`Task: <id>` in the commit message). Work that sits on an unmerged branch shows as **On branch**. A
 "done" that someone or some agent wrote into a file, with no commit behind it, shows as **Unverified**.
 
+This matters most with AI coding agents. When an agent ticks `[x]` in a Spec Kit `tasks.md` or moves a
+Backlog.md task to Done, Speclog shows whether a commit backs that claim and whether the commit has
+reached main. A task marked done with no commit behind it shows as **Unverified** instead of passing as
+finished.
+
 ![The Speclog board grouped by repository and program: Backlog.md and docs/tasks items with Done, On branch, Unverified and Needs verification statuses, and the properties of a done item with its commit](docs/images/board-program.png)
 
 ![The same board grouped by time, showing every status from Not started to Needs decision](docs/images/board-time.png)
@@ -83,6 +88,42 @@ Repository names are case-insensitive. Status order: a closing commit on main gi
 newest closing commit); otherwise a closing commit on an unmerged branch gives **On branch**; otherwise
 the status written in the file. The main branch is the one `origin/HEAD` points to, else `main`, else
 `master`; a commit counts as on main when it is reachable from `origin/<main>` or from the local branch.
+
+## For AI coding agents
+
+Agents follow the closing rule when it is in the instructions they read at the start of a session:
+`CLAUDE.md` for Claude Code, `AGENTS.md` or your editor's rules file for other agents. Copy this block
+into that file:
+
+```markdown
+## Tasks
+
+Tasks live in `docs/tasks/*.md`. Their status is verified from git by Speclog
+(https://github.com/geometrica-io/Speclog): a task is done only when a commit says so.
+
+- A commit that finishes a task has the line `Task: <id>` in its message body.
+- A commit that advances a task without finishing it has the line `Task-Progress: <id>`.
+- Never write `status: done` by hand; it is computed from git once the commit reaches the main branch.
+- Never change or reuse a task ID.
+- For a task in another repository, write `Task: <repo>:<id>`.
+```
+
+For Spec Kit or Backlog.md, replace the first paragraph of the block with one of these:
+
+```markdown
+Tasks live in `specs/*/tasks.md` (GitHub Spec Kit). Ticking `[x]` is not enough: without a
+`Task: <id>` commit the task shows as Unverified. The ID is `<feature-folder>/T001`.
+```
+
+```markdown
+Tasks live in `backlog/tasks/` (Backlog.md). Moving a task to Done is not enough: without a
+`Task: <id>` commit (for example `Task: task-12`) the task shows as Unverified.
+```
+
+In these two formats, drop the `status: done` line from the list.
+
+[Send to agent](#send-to-agent) works from the other side: it hands your agent a prompt that already
+contains the task and this closing rule.
 
 ## Statuses
 

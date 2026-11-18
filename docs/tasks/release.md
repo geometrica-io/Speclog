@@ -59,3 +59,8 @@ size: S
 depends: REL.8
 note: Open VSX registers a trusted publisher only for an extension that already has a version there, so 0.1.1 went out with OVSX_PAT. On open-vsx.org register the trusted publisher (geometrica-io/Speclog, release.yml), set the repository variable OVSX_TRUSTED=true, run release.yml manually (dry run verifies it), then delete the OVSX_PAT secret.
 evidence: trusted publisher registered on open-vsx.org; OVSX_TRUSTED=true; dry run 44186307597 green ("Open VSX trusted publisher is set up for geometricaio.speclog"); OVSX_PAT secret deleted (2026-11-18)
+
+## REL.10 Describe agent use in the README and the store listing
+status: open
+size: S
+note: Add a "For AI coding agents" section with a rules block to copy into CLAUDE.md / AGENTS.md, and use the words people search with (Spec Kit tasks.md, agent marked done) in the README intro, the Marketplace description and the keywords. Reaches the stores with the next release.
