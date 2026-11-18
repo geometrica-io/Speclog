@@ -75,6 +75,25 @@ export async function run(): Promise<void> {
   assert.ok(nodes[0].label.startsWith('alpha') && nodes[1].label.startsWith('beta'), nodes.map((c) => c.label).join(', '));
   console.log('ok - the panel receives the state; the tree has 2 repository nodes');
 
+  // Sort: the Time view groups by last activity, newest first. A1's closing commit is today; both items
+  // were created 2026-01-01.
+  type TimeState = { type: string; sort?: string; view: string; tree: { children: { key: string; children: { key: string }[] }[] } };
+  const today = new Date();
+  const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  await api.receive({ type: 'setView', view: 'time' });
+  await api.receive({ type: 'setSort', sort: 'activity-desc' });
+  await waitFor('a Time state sorted by last activity', () => {
+    const p = api.lastPosted() as TimeState | undefined;
+    return p?.type === 'state' && p.view === 'time' && p.sort === 'activity-desc';
+  });
+  const timed = api.lastPosted() as TimeState;
+  assert.strictEqual(timed.tree.children[0].children[0].key, `t/${ymd.slice(0, 7)}/${ymd}`, 'newest activity day first');
+  await api.receive({ type: 'setSort', sort: 'nonsense' });
+  assert.strictEqual((api.lastPosted() as TimeState).sort, 'activity-desc', 'an unknown sort is ignored');
+  await api.receive({ type: 'setSort', sort: 'created-asc' });
+  await api.receive({ type: 'setView', view: 'program' });
+  console.log('ok - the Sort combobox orders the Time view by last activity');
+
   // Trust and hook commands with an explicit repository key (the Attention button path).
   const state = api.lastPosted() as unknown as { repos: { key: string; name: string }[] };
   const alpha = state.repos.find((r) => r.name.startsWith('alpha'));

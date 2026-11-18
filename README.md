@@ -102,6 +102,14 @@ for that repository (kept in Speclog's own storage, nothing is written to the re
 were already done in the task files at that commit show as **Done (from file)**, and the untagged-work
 and manual-done checks start from there. **Speclog: Stop trusting task files** removes the cutoff.
 
+## Views and sorting
+
+**View** groups the board by Program, Area or Time. **Sort** orders items by **Created** or by **Last
+activity**, oldest (↑) or newest (↓) first. Last activity is the newest of an item's created date, its
+`Task:` / `Task-Progress:` commits (on the main branch or any branch Speclog reads) and its done date, so
+`Last activity ↓` brings the day's work, including work on branches, to the top. In the Time view the
+day groups follow the chosen date.
+
 ## Attention list
 
 The bottom panel lists what needs a look: stale branches with unmerged task work, commits that changed

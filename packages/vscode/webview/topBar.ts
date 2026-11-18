@@ -1,14 +1,16 @@
-// Top bar: View combobox, search, Filter button (+ dropdown), summary, busy / fetch state, Attention button.
-import type { FetchStateDto, FilterDto, FilterPreset, Status, Strings, ViewMode } from '../src/protocol';
+// Top bar: View and Sort comboboxes, search, Filter button (+ dropdown), summary, busy / fetch state, Attention button.
+import type { FetchStateDto, FilterDto, FilterPreset, SortOrder, Status, Strings, ViewMode } from '../src/protocol';
 import type { RepoDto, SummaryDto } from '../src/protocol';
 import { h } from './dom';
 import { FilterPopup, filterActive } from './filter';
 import { fmt } from './viewModel';
 
 const SEARCH_DELAY_MS = 200;
+const SORTS: readonly SortOrder[] = ['created-asc', 'created-desc', 'activity-asc', 'activity-desc'];
 
 export interface TopBarCallbacks {
   setView(v: ViewMode): void;
+  setSort(s: SortOrder): void;
   setFilter(f: FilterDto): void;
   preset(p: FilterPreset): void;
   toggleAttention(): void;
@@ -26,6 +28,8 @@ export class TopBar {
   readonly element: HTMLDivElement;
   private readonly viewLabel: HTMLLabelElement;
   private readonly view: HTMLSelectElement;
+  private readonly sortLabel: HTMLLabelElement;
+  private readonly sort: HTMLSelectElement;
   private readonly search: HTMLInputElement;
   private readonly filterButton: HTMLButtonElement;
   private readonly shown: HTMLSpanElement;
@@ -44,6 +48,10 @@ export class TopBar {
     for (const v of ['program', 'area', 'time']) this.view.append(h('option', { attrs: { value: v } }));
     this.view.addEventListener('change', () => cb.setView(this.view.value as ViewMode));
     this.viewLabel = h('label', { class: 'view-label', attrs: { for: 'view-select' } });
+    this.sort = h('select', { class: 'select', attrs: { id: 'sort-select' } });
+    for (const s of SORTS) this.sort.append(h('option', { attrs: { value: s } }));
+    this.sort.addEventListener('change', () => cb.setSort(this.sort.value as SortOrder));
+    this.sortLabel = h('label', { class: 'view-label', attrs: { for: 'sort-select' } });
     this.search = h('input', { class: 'input search', attrs: { type: 'search', spellcheck: 'false' } });
     this.search.addEventListener('input', () => {
       this.searchPending = true;
@@ -83,7 +91,7 @@ export class TopBar {
     this.attention = h('button', { class: 'button attention-button', attrs: { 'type': 'button', 'aria-pressed': 'false' } });
     this.attention.addEventListener('click', () => cb.toggleAttention());
     this.element = h('div', { class: 'topbar' },
-      h('div', { class: 'left' }, this.viewLabel, this.view, this.search, filterWrap, this.shown),
+      h('div', { class: 'left' }, this.viewLabel, this.view, this.sortLabel, this.sort, this.search, filterWrap, this.shown),
       h('div', { class: 'right' }, this.summary, this.spinner, this.fetch, this.attention));
   }
 
@@ -92,6 +100,8 @@ export class TopBar {
     this.viewLabel.textContent = S.view;
     const labels: Record<string, string> = { program: S['view.program'], area: S['view.area'], time: S['view.time'] };
     for (const o of Array.from(this.view.options)) o.textContent = labels[o.value];
+    this.sortLabel.textContent = S.sort;
+    for (const o of Array.from(this.sort.options)) o.textContent = S[`sort.${o.value as SortOrder}`];
     this.search.placeholder = S.search;
     this.search.setAttribute('aria-label', S.search);
     this.filterButton.textContent = S.filter;
@@ -99,12 +109,13 @@ export class TopBar {
   }
 
   update(st: {
-    view: ViewMode; filter: FilterDto; counts: Record<Status, number>; repos: RepoDto[]; summary: SummaryDto; busy: boolean;
-    fetch: FetchStateDto[]; attentionCount: number; attentionOpen: boolean;
+    view: ViewMode; sort: SortOrder; filter: FilterDto; counts: Record<Status, number>; repos: RepoDto[]; summary: SummaryDto;
+    busy: boolean; fetch: FetchStateDto[]; attentionCount: number; attentionOpen: boolean;
   }): void {
     const S = this.S;
     if (!S) return;
     this.view.value = st.view;
+    this.sort.value = st.sort;
     // The search box is the user's: only filled from the host while not being typed in.
     this.filter = { ...st.filter, search: this.searchPending ? this.search.value : st.filter.search };
     if (!this.searchPending && document.activeElement !== this.search) this.search.value = st.filter.search;

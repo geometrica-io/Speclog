@@ -75,7 +75,7 @@ function item(over: Partial<ItemDetailsDto> = {}): ItemDetailsDto {
   return {
     kind: 'item', key: 'k', repo: 'R', repoPath: '/r', repoKey: 'git@x:R', id: 'T1', title: 'Title', status: 'open',
     branchOnly: false, historical: false, trustedFromFile: false, flaggedUnverified: false, size: 'M', priority: '',
-    area: 'A/B', created: '2026-01-01', note: 'n', depends: [], spec: '', specState: 'none', format: 'docsTasks',
+    area: 'A/B', created: '2026-01-01', lastActivity: '2026-11-18', note: 'n', depends: [], spec: '', specState: 'none', format: 'docsTasks',
     taskFile: 'docs/tasks/a.md', taskFileLine: 7, fileStatusText: 'open', branches: [], commits: [], doneDate: '',
     historyDate: '', historyCommit: '', evidence: '', agent: { enabled: true, reason: '' }, ...over,
   };
@@ -88,7 +88,9 @@ describe('formatDetails', () => {
   it('groups an item into Item, Description, Source and trace', () => {
     const d = formatDetails(item(), S);
     expect(d.map((g) => g.title)).toEqual(['group.item', 'group.description', 'group.source']);
-    expect(labels(d, 'group.item')).toEqual(['row.id', 'row.title', 'row.status', 'row.size', 'row.priority', 'row.area', 'row.created']);
+    expect(labels(d, 'group.item')).toEqual(['row.id', 'row.title', 'row.status', 'row.size', 'row.priority', 'row.area', 'row.created',
+      'row.lastActivity']);
+    expect(d[0].rows[7].value).toEqual({ kind: 'text', text: '2026-11-18' });
     expect(d[0].rows[0].value).toEqual({ kind: 'text', text: 'R · T1' });
     expect(d[0].rows[5].value).toEqual({ kind: 'text', text: 'A › B' });
   });
