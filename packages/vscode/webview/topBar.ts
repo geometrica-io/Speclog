@@ -1,12 +1,12 @@
 // Top bar: View and Sort comboboxes, search, Filter button (+ dropdown), summary, busy / fetch state, Attention button.
 import type { FetchStateDto, FilterDto, FilterPreset, SortOrder, Status, Strings, ViewMode } from '../src/protocol';
 import type { RepoDto, SummaryDto } from '../src/protocol';
+import { SORTS } from '../src/protocol';
 import { h } from './dom';
 import { FilterPopup, filterActive } from './filter';
 import { fmt } from './viewModel';
 
 const SEARCH_DELAY_MS = 200;
-const SORTS: readonly SortOrder[] = ['created-asc', 'created-desc', 'activity-asc', 'activity-desc'];
 
 export interface TopBarCallbacks {
   setView(v: ViewMode): void;

@@ -355,8 +355,17 @@ export class SpeclogHost implements vscode.Disposable {
       case 'setSort':
         if (!isSort(m.sort) || m.sort === this.ui.sort) return;
         this.ui.sort = m.sort;
-        this.saveUi();
         this.rebuild();
+        if (this.ui.view === 'time' && this.tree) {
+          // The selected item may move to another day group: open its new parents so it stays in view.
+          const path = pathToKey(this.tree, this.ui.selected.time);
+          if (path.length > 1) {
+            const open = new Set(this.ui.open.time);
+            for (const k of path.slice(0, -1)) open.add(k);
+            this.setOpenKeys(open);
+          }
+        }
+        this.saveUi();
         this.postState(true);
         this.postDetails();
         break;

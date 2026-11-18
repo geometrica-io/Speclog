@@ -2,8 +2,10 @@
 // imports: the webview bundle never pulls in the core or `vscode`. DTOs are plain JSON.
 
 export type ViewMode = 'program' | 'area' | 'time';
-/** Same values as the core's SortOrder (this file has no imports). */
+/** Same values as the core's SortOrder (this file has no imports); dto.ts checks the two agree. */
 export type SortOrder = 'created-asc' | 'created-desc' | 'activity-asc' | 'activity-desc';
+/** The Sort combobox options, in order; a test checks it equals the core's SORT_ORDERS. */
+export const SORTS: readonly SortOrder[] = ['created-asc', 'created-desc', 'activity-asc', 'activity-desc'];
 
 export type Status =
   | 'open' | 'partial' | 'bug' | 'verify' | 'decision'
