@@ -21,6 +21,14 @@ describe('readUi', () => {
     });
     expect(readUi({ view: 'bogus' }).view).toBe('program');
   });
+
+  it('keeps a valid sort and falls back to created-asc otherwise', () => {
+    expect(defaultUi().sort).toBe('created-asc');
+    expect(readUi({ sort: 'activity-desc' }).sort).toBe('activity-desc');
+    expect(readUi({ sort: 'x' }).sort).toBe('created-asc');
+    expect(readUi({ sort: 3 }).sort).toBe('created-asc');
+    expect(readUi({}).sort).toBe('created-asc');
+  });
 });
 
 describe('isKey', () => {

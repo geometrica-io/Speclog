@@ -2,7 +2,7 @@
 // tree keys are opaque, so nodes are found by comparing keys or node.item, never by parsing.
 import {
   ALL_STATUSES, AgentBlock, AttentionItem, Filter, NO_AREA_KEY, NO_DATE_KEY, ResolvedItem, Status, TreeNode,
-  Workspace, agentAvailability, findDependency, itemFile, repoNodeKey,
+  Workspace, agentAvailability, findDependency, itemFile, lastActivity, repoNodeKey,
 } from '@speclog/core';
 import type {
   AttentionItemDto, BranchSummaryDto, FilterDto, ItemDetailsDto, Status as StatusDto, TreeNodeDto,
@@ -91,7 +91,7 @@ export function itemDetails(
   return {
     kind: 'item', key, repo: r.repo, repoPath: r.repoPath, repoKey: r.repoKey, id: t.id, title: t.title, status: r.status,
     branchOnly: r.branchOnly, historical: r.historical, trustedFromFile: r.trustedFromFile, flaggedUnverified: r.flaggedUnverified,
-    size: t.size, priority: t.priority, area: t.area, created: t.created, note: t.note,
+    size: t.size, priority: t.priority, area: t.area, created: t.created, lastActivity: lastActivity(r), note: t.note,
     depends: t.depends.map((dep) => {
       const d = findDependency(ws, r.repoPath, dep);
       return d

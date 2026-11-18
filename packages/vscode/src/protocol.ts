@@ -2,6 +2,8 @@
 // imports: the webview bundle never pulls in the core or `vscode`. DTOs are plain JSON.
 
 export type ViewMode = 'program' | 'area' | 'time';
+/** Same values as the core's SortOrder (this file has no imports). */
+export type SortOrder = 'created-asc' | 'created-desc' | 'activity-asc' | 'activity-desc';
 
 export type Status =
   | 'open' | 'partial' | 'bug' | 'verify' | 'decision'
@@ -123,6 +125,8 @@ export interface ItemDetailsDto {
   priority: string;
   area: string;
   created: string;
+  /** Newest of created, the item's commit dates and its done date ("" when none). */
+  lastActivity: string;
   note: string;
   depends: DependencyDto[];
   spec: string;
@@ -163,7 +167,7 @@ export type DetailsDto = ItemDetailsDto | BranchSummaryDto;
 export type HostToWebview =
   | { type: 'init'; strings: Strings }
   | {
-    type: 'state'; view: ViewMode; tree: TreeNodeDto; counts: Record<Status, number>; summary: SummaryDto;
+    type: 'state'; view: ViewMode; sort: SortOrder; tree: TreeNodeDto; counts: Record<Status, number>; summary: SummaryDto;
     attention: AttentionItemDto[]; busy: boolean; fetch: FetchStateDto[]; filter: FilterDto; ui: UiStateDto; repos: RepoDto[];
   }
   /** Only busy / fetch / Attention changed (same workspace): the tree is not resent. */
@@ -173,6 +177,7 @@ export type HostToWebview =
 export type WebviewToHost =
   | { type: 'ready' }
   | { type: 'setView'; view: ViewMode }
+  | { type: 'setSort'; sort: SortOrder }
   | { type: 'setFilter'; filter: FilterDto }
   /** Statuses and sizes from the preset; hidden repositories and the search are kept. */
   | { type: 'preset'; preset: FilterPreset }
@@ -188,7 +193,8 @@ export type WebviewToHost =
 
 /** Every user-visible webview text; the host fills it through vscode.l10n.t. "{0}" are placeholders. */
 export const STRING_KEYS = [
-  'view', 'view.program', 'view.area', 'view.time', 'search', 'filter', 'filter.presets', 'filter.status',
+  'view', 'view.program', 'view.area', 'view.time', 'sort', 'sort.created-asc', 'sort.created-desc', 'sort.activity-asc',
+  'sort.activity-desc', 'search', 'filter', 'filter.presets', 'filter.status',
   'filter.repositories', 'filter.size', 'filter.noSize', 'preset.all', 'preset.open', 'preset.done', 'preset.onBranch',
   'preset.bugs', 'summary', 'summary.unverified', 'shown', 'attention', 'scanning', 'fetched', 'notFetched',
   'fetchFailing', 'noRepositories',
@@ -197,7 +203,7 @@ export const STRING_KEYS = [
   'tree.empty', 'tree.noMatch', 'tree.scanning', 'tree.label',
   'props.title', 'props.empty', 'group.item', 'group.description', 'group.source', 'group.evidence', 'group.summary',
   'group.byStatus', 'group.oldest',
-  'row.id', 'row.title', 'row.status', 'row.size', 'row.priority', 'row.area', 'row.created', 'row.note',
+  'row.id', 'row.title', 'row.status', 'row.size', 'row.priority', 'row.area', 'row.created', 'row.lastActivity', 'row.note',
   'row.depends', 'row.spec', 'row.taskFile', 'row.inFile', 'row.branches', 'row.commits', 'row.completion',
   'row.expression', 'row.result', 'row.name', 'row.items', 'row.done', 'row.progress', 'row.item',
   'agent.send',

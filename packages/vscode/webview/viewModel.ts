@@ -87,6 +87,7 @@ function itemGroups(d: ItemDetailsDto, S: Strings): PropGroup[] {
     { label: S['row.priority'], value: text(d.priority) },
     { label: S['row.area'], value: text(d.area.split('/').filter((p) => p !== '').join(' › ')) },
     { label: S['row.created'], value: text(d.created) },
+    { label: S['row.lastActivity'], value: text(d.lastActivity) },
   ] });
 
   const deps: PropValue = d.depends.length === 0 ? text('') : { kind: 'list', items: d.depends.map((dep): PropValue => (dep.target
