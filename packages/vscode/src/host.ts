@@ -20,7 +20,7 @@ import { SpeclogStatusBar } from './statusBar';
 import { agentBlockText, translateCoreLabel, webviewStrings } from './strings';
 import { summarize } from './summary';
 import {
-  COALESCE_MS, MAX_KEYS, PersistedUi, isKey, isStr, isView, num, readHiddenRepos, readTrustCommits, readUi,
+  COALESCE_MS, MAX_KEYS, PersistedUi, isKey, isSort, isStr, isView, num, readHiddenRepos, readTrustCommits, readUi,
 } from './uiState';
 
 type StateMessage = Extract<HostToWebview, { type: 'state' }>;
@@ -239,12 +239,14 @@ export class SpeclogHost implements vscode.Disposable {
   private rebuild(): void {
     this.fullTree = undefined;
     this.builtFrom = this.state?.workspace;
-    this.tree = this.state ? buildTree(this.state.workspace, this.ui.view, this.filter()) : undefined;
+    this.tree = this.state ? buildTree(this.state.workspace, this.ui.view, this.filter(), this.ui.sort) : undefined;
   }
 
   /** The unfiltered tree (dropped and hidden repositories included): details of any selected node. */
   private full(): TreeNode | undefined {
-    if (!this.fullTree && this.state) this.fullTree = buildTree(this.state.workspace, this.ui.view, applyPreset('all'));
+    if (!this.fullTree && this.state) {
+      this.fullTree = buildTree(this.state.workspace, this.ui.view, applyPreset('all'), this.ui.sort);
+    }
     return this.fullTree;
   }
 
@@ -261,6 +263,7 @@ export class SpeclogHost implements vscode.Disposable {
     return {
       type: 'state',
       view: this.ui.view,
+      sort: this.ui.sort,
       tree: toTreeDto(this.tree, translateCoreLabel),
       counts,
       summary: { repos: sum.repos, items: sum.total, done: sum.done, unverified: sum.unverified,
@@ -346,6 +349,23 @@ export class SpeclogHost implements vscode.Disposable {
         this.ui.view = m.view;
         this.saveUi();
         this.rebuild();
+        this.postState(true);
+        this.postDetails();
+        break;
+      case 'setSort':
+        if (!isSort(m.sort) || m.sort === this.ui.sort) return;
+        this.ui.sort = m.sort;
+        this.rebuild();
+        if (this.ui.view === 'time' && this.tree) {
+          // The selected item may move to another day group: open its new parents so it stays in view.
+          const path = pathToKey(this.tree, this.ui.selected.time);
+          if (path.length > 1) {
+            const open = new Set(this.ui.open.time);
+            for (const k of path.slice(0, -1)) open.add(k);
+            this.setOpenKeys(open);
+          }
+        }
+        this.saveUi();
         this.postState(true);
         this.postDetails();
         break;

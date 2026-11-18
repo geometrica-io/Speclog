@@ -2,16 +2,19 @@
 // tree keys are opaque, so nodes are found by comparing keys or node.item, never by parsing.
 import {
   ALL_STATUSES, AgentBlock, AttentionItem, Filter, NO_AREA_KEY, NO_DATE_KEY, ResolvedItem, Status, TreeNode,
-  Workspace, agentAvailability, findDependency, itemFile, repoNodeKey,
+  SortOrder, Workspace, agentAvailability, findDependency, itemFile, lastActivity, repoNodeKey,
 } from '@speclog/core';
 import type {
-  AttentionItemDto, BranchSummaryDto, FilterDto, ItemDetailsDto, Status as StatusDto, TreeNodeDto,
+  AttentionItemDto, BranchSummaryDto, FilterDto, ItemDetailsDto, SortOrder as SortOrderDto, Status as StatusDto, TreeNodeDto,
 } from './protocol';
 import { STATUS_ORDER } from './protocol';
 
 /** Compile-time check: the protocol's status list is the core's. */
 const sameStatus: [Status] extends [StatusDto] ? ([StatusDto] extends [Status] ? true : never) : never = true;
 void sameStatus;
+/** Compile-time check: the protocol's sort orders are the core's. */
+const sameSort: [SortOrder] extends [SortOrderDto] ? ([SortOrderDto] extends [SortOrder] ? true : never) : never = true;
+void sameSort;
 
 /** Translates a core English label (placeholders, "(no area)", "(no date)"). */
 export type Translate = (english: string) => string;
@@ -91,7 +94,7 @@ export function itemDetails(
   return {
     kind: 'item', key, repo: r.repo, repoPath: r.repoPath, repoKey: r.repoKey, id: t.id, title: t.title, status: r.status,
     branchOnly: r.branchOnly, historical: r.historical, trustedFromFile: r.trustedFromFile, flaggedUnverified: r.flaggedUnverified,
-    size: t.size, priority: t.priority, area: t.area, created: t.created, note: t.note,
+    size: t.size, priority: t.priority, area: t.area, created: t.created, lastActivity: lastActivity(r), note: t.note,
     depends: t.depends.map((dep) => {
       const d = findDependency(ws, r.repoPath, dep);
       return d

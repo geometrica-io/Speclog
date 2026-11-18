@@ -1,8 +1,8 @@
 // Port of ProjectManager tests/ViewTreeTests.cpp (same case names) plus Speclog extras.
 import { describe, it, expect } from 'vitest';
 import {
-  FilterPreset, NO_AREA_KEY, NO_DATE_KEY, TreeNode, ViewMode, applyPreset, buildTree, countByStatus, defaultFilter,
-  matches, narrowing, repoNodeKey,
+  FilterPreset, NO_AREA_KEY, NO_DATE_KEY, SORT_ORDERS, TreeNode, ViewMode, applyPreset, buildTree, countByStatus,
+  defaultFilter, lastActivity, matches, narrowing, repoNodeKey,
 } from '../src/viewTree';
 import { Workspace, resolveAll } from '../src/status';
 import type { BranchData, RepoSnapshot } from '../src/snapshot';
@@ -360,3 +360,73 @@ describe('view tree (Speclog extras)', () => {
 // Type check helper so unused imports fail loudly.
 const _preset: FilterPreset = 'all';
 void _preset;
+
+describe('sort by created or last activity', () => {
+  const commit = (date: string) => ({ repo: 'R', hash: date.replace(/-/g, '').padEnd(40, '0'), date, subject: 's', closes: false });
+  const ids = (n: TreeNode) => n.children.map((c) => c.item?.item.id ?? c.label);
+  /** Workspace with commits / done dates set on the resolved items (by id). */
+  function ws(items: Item[], dates: Record<string, { commits?: string[]; done?: string }> = {}): Workspace {
+    const w = make(repo('R', [prog('docs/tasks/a.md', 'A', items)]));
+    for (const r of w.items) {
+      const d = dates[r.item.id];
+      if (d?.commits) r.commits = d.commits.map(commit);
+      if (d?.done) r.doneDate = d.done;
+    }
+    return w;
+  }
+
+  it('lastActivity picks the newest of created, commit dates and done date', () => {
+    const w = ws([item('A', '', '2026-11-13'), item('B'), item('C', '', '2026-11-01')], {
+      A: { commits: ['2026-11-15', '2026-11-18'] }, C: { commits: ['not-a-date'], done: '2026-11-04' },
+    });
+    const by = (id: string) => w.items.find((r) => r.item.id === id)!;
+    expect(lastActivity(by('A'))).toBe('2026-11-18');
+    expect(lastActivity(by('B'))).toBe('');
+    expect(lastActivity(by('C'))).toBe('2026-11-04');
+  });
+
+  it('default sort leaves every view unchanged', () => {
+    const w = ws([item('A1', 'X', '2026-11-05'), item('A2', 'X', '2026-10-01', 'open', 'G'), item('A3', '', '')],
+      { A2: { commits: ['2026-11-18'] } });
+    for (const m of MODES) expect(buildTree(w, m, defaultFilter(), 'created-asc')).toEqual(buildTree(w, m, defaultFilter()));
+    expect(SORT_ORDERS).toEqual(['created-asc', 'created-desc', 'activity-asc', 'activity-desc']);
+  });
+
+  it('time view groups by last activity', () => {
+    const w = ws([item('F5', '', '2026-11-13')], { F5: { commits: ['2026-11-18'] } });
+    for (const s of ['activity-asc', 'activity-desc'] as const) {
+      expect(collectKeys(buildTree(w, 'time', defaultFilter(), s))).toContain('t/2026-11/2026-11-18');
+    }
+    for (const s of ['created-asc', 'created-desc'] as const) {
+      const keys = collectKeys(buildTree(w, 'time', defaultFilter(), s));
+      expect(keys).toContain('t/2026-11/2026-11-13');
+      expect(keys).not.toContain('t/2026-11/2026-11-18');
+    }
+  });
+
+  it('descending orders newest group first and (no date) last', () => {
+    const w = ws([item('A', '', '2026-10-20'), item('B', '', '2026-11-02'), item('C', '', '2026-11-09'), item('D')]);
+    const t = buildTree(w, 'time', defaultFilter(), 'created-desc');
+    expect(t.children.map((c) => c.key)).toEqual(['t/2026-11', 't/2026-10', NO_DATE_KEY]);
+    expect(child(t, '2026-11')!.children.map((c) => c.label)).toEqual(['2026-11-09', '2026-11-02']);
+    const asc = buildTree(w, 'time', defaultFilter(), 'created-asc');
+    expect(asc.children.map((c) => c.key)).toEqual(['t/2026-10', 't/2026-11', NO_DATE_KEY]);
+  });
+
+  it('program and area views order items inside a group by the chosen date', () => {
+    const w = ws([item('A', 'X', '2026-11-01'), item('B', 'X', '2026-11-05'), item('C', 'X', '2026-11-01')],
+      { B: { commits: ['2026-11-18'] } });
+    const progLeaves = (s: Parameters<typeof buildTree>[3]) => ids(child(child(buildTree(w, 'program', defaultFilter(), s), 'R')!, 'A')!);
+    expect(progLeaves('created-asc')).toEqual(['A', 'B', 'C']); // file order
+    expect(progLeaves('activity-desc')).toEqual(['B', 'A', 'C']); // equal dates keep file order
+    expect(progLeaves('activity-asc')).toEqual(['A', 'C', 'B']);
+    expect(ids(child(buildTree(w, 'area', defaultFilter(), 'activity-desc'), 'X')!)).toEqual(['B', 'A', 'C']);
+  });
+
+  it('items without any date sort last in both directions', () => {
+    const w = ws([item('N'), item('A', '', '2026-11-01'), item('B', '', '2026-11-03')]);
+    const leaves = (s: Parameters<typeof buildTree>[3]) => ids(child(child(buildTree(w, 'program', defaultFilter(), s), 'R')!, 'A')!);
+    expect(leaves('created-desc')).toEqual(['B', 'A', 'N']);
+    expect(leaves('activity-asc')).toEqual(['A', 'B', 'N']);
+  });
+});
