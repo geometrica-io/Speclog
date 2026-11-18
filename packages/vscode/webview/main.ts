@@ -134,7 +134,7 @@ function renderTopBar(): void {
 }
 
 function renderState(m: StateMessage): void {
-  if (state && state.view !== m.view) pendingToggles = new Map();
+  if (state && (state.view !== m.view || state.sort !== m.sort)) pendingToggles = new Map();
   state = m;
   attentionOpen = m.ui.attentionOpen;
   attentionHeight = m.ui.attentionHeight;

@@ -41,9 +41,10 @@ function orderLeaves(n: TreeNode, sort: SortOrder): void {
   const pos: number[] = [];
   n.children.forEach((c, i) => { if (c.item) pos.push(i); });
   if (pos.length > 1) {
-    const sorted = pos.map((i) => n.children[i])
-      .sort((a, b) => cmpDate(sortDate(a.item!, sort), sortDate(b.item!, sort), desc));
-    pos.forEach((p, k) => { n.children[p] = sorted[k]; });
+    // Each leaf's date once, not per comparison.
+    const sorted = pos.map((i) => ({ leaf: n.children[i], date: sortDate(n.children[i].item!, sort) }))
+      .sort((a, b) => cmpDate(a.date, b.date, desc));
+    pos.forEach((p, k) => { n.children[p] = sorted[k].leaf; });
   }
   for (const c of n.children) if (!c.item) orderLeaves(c, sort);
 }
