@@ -3,7 +3,7 @@
 All notable changes to Speclog are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.2] - 2026-11-18 (pre-release)
 
 ### Added
 - A **Sort** combobox next to View: Created or Last activity, oldest or newest first. The Time view
