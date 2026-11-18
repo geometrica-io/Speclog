@@ -27,7 +27,11 @@
     "spec kit",
     "task list",
     "multi-repo",
-    "ai agents"
+    "ai agents",
+    "ai coding agent",
+    "spec-driven development",
+    "tasks.md",
+    "claude code"
   ],
   "engines": {
     "vscode": "^1.90.0"
