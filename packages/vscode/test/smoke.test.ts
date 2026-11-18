@@ -149,11 +149,33 @@ function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'speclog-smoke-'));
 }
 
-/** The written argument, once the process has written it. */
-async function readWhenWritten(file: string): Promise<string> {
-  await waitFor(`the agent command to write ${file}`, () => fs.existsSync(file) && fs.statSync(file).size > 0);
-  await new Promise((r) => setTimeout(r, 300));
-  return fs.readFileSync(file, 'utf8');
+/** How long a launched agent terminal gets to write its file before it counts as never started. */
+const LAUNCH_MS = 20000;
+
+/**
+ * Sends the item and returns what the agent command wrote to file. Under machine load VS Code's terminal
+ * host can stall ("No ptyHost heartbeat after 6 seconds" in the log): the terminal exists but its process
+ * never starts. Such an attempt is closed and the send is retried once; every send must still be 'sent'.
+ */
+async function sendAndRead(sendItem: () => PromiseLike<string>, file: string, terminalName?: string): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
+    assert.strictEqual(await sendItem(), 'sent');
+    const end = Date.now() + LAUNCH_MS;
+    // The terminal closes when the command exits, so it is looked for while waiting, not afterwards.
+    let sawTerminal = false;
+    while (Date.now() < end) {
+      sawTerminal ||= !terminalName || vscode.window.terminals.some((t) => t.name === terminalName);
+      if (fs.existsSync(file) && fs.statSync(file).size > 0) {
+        assert.ok(sawTerminal, `terminal "${terminalName}"`);
+        await sleep(300); // let the writer finish
+        return fs.readFileSync(file, 'utf8');
+      }
+      await sleep(50);
+    }
+    if (attempt >= 2) throw new Error(`timed out waiting for the agent command to write ${file} (2 attempts)`);
+    console.log(`retry - the agent terminal did not start within ${LAUNCH_MS / 1000} s (VS Code terminal host busy)`);
+    await closeSpeclogTerminals();
+  }
 }
 
 async function closeSpeclogTerminals(): Promise<void> {
@@ -251,17 +273,15 @@ async function agentTests(api: SpeclogApi): Promise<void> {
   } else {
     const out = path.join(tempDir(), 'arg.txt');
     await setAgent('terminalCommand', ['node', '-e', writeArg(out)]);
-    assert.strictEqual(await send(b1), 'sent');
-    await waitFor('terminal "Speclog: B1"', () => vscode.window.terminals.some((t) => t.name === 'Speclog: B1'));
-    assert.strictEqual(await readWhenWritten(out), prompt, 'the full prompt arrives unchanged as one argument');
+    assert.strictEqual(await sendAndRead(() => send(b1), out, 'Speclog: B1'), prompt,
+      'the full prompt arrives unchanged as one argument');
     await closeSpeclogTerminals();
     console.log('ok - the terminal target opens "Speclog: B1" and passes the prompt unchanged');
 
     const outLong = path.join(tempDir(), 'arg.txt');
     await setAgent('terminalCommand', ['node', '-e', writeArg(outLong)]);
     await setAgent('promptTemplate', `${'x'.repeat(4100)} {id} {note}`);
-    assert.strictEqual(await send(b1), 'sent');
-    const arg = await readWhenWritten(outLong);
+    const arg = await sendAndRead(() => send(b1), outLong);
     const m = PROMPT_FILE_ARG.exec(arg);
     assert.ok(m, arg);
     assert.strictEqual(fs.readFileSync(m[1], 'utf8'), `${'x'.repeat(4100)} B1 ${note}`, 'the prompt file holds the prompt');
@@ -278,8 +298,7 @@ async function agentTests(api: SpeclogApi): Promise<void> {
       const launcher = path.join(dir, 'fake-agent.cmd');
       fs.writeFileSync(launcher, `@"${node}" "${script}" %*\r\n`);
       await setAgent('terminalCommand', [launcher]);
-      assert.strictEqual(await send(b1), 'sent');
-      const c = PROMPT_FILE_ARG.exec(await readWhenWritten(outCmd));
+      const c = PROMPT_FILE_ARG.exec(await sendAndRead(() => send(b1), outCmd));
       assert.ok(c, 'one-line prompt-file argument');
       assert.strictEqual(fs.readFileSync(c[1], 'utf8'), prompt, 'the prompt file holds the full prompt');
       await closeSpeclogTerminals();
