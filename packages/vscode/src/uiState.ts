@@ -1,9 +1,9 @@
 // The panel's UI state kept in workspaceState, and validation of values coming from the webview or
 // from storage. Pure (no `vscode`).
-import { defaultFilter } from '@speclog/core';
+import { DEFAULT_SORT, SORT_ORDERS, defaultFilter } from '@speclog/core';
 import { filterFromDto, filterToDto } from './dto';
 import { MAX_KEY_LENGTH } from './protocol';
-import type { Status, ViewMode } from './protocol';
+import type { SortOrder, Status, ViewMode } from './protocol';
 
 export const VIEWS: readonly ViewMode[] = ['program', 'area', 'time'];
 export const MAX_KEYS = 20000;
@@ -13,6 +13,7 @@ export const COALESCE_MS = 100;
 /** Panel state remembered per workspace (the search text is not). */
 export interface PersistedUi {
   view: ViewMode;
+  sort: SortOrder;
   statuses: Status[];
   sizes: string[];
   open: Record<ViewMode, string[]>;
@@ -24,7 +25,7 @@ export interface PersistedUi {
 
 export function defaultUi(): PersistedUi {
   return {
-    view: 'program', statuses: filterToDto(defaultFilter()).statuses, sizes: [], open: { program: [], area: [], time: [] },
+    view: 'program', sort: DEFAULT_SORT, statuses: filterToDto(defaultFilter()).statuses, sizes: [], open: { program: [], area: [], time: [] },
     selected: { program: '', area: '', time: '' }, attentionOpen: false, attentionHeight: 180, treeFraction: 0.52,
   };
 }
@@ -34,6 +35,7 @@ export const strList = (v: unknown, max = MAX_KEYS): string[] =>
 export const num = (v: unknown, fallback: number, min: number, max: number): number =>
   (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback);
 export const isView = (v: unknown): v is ViewMode => VIEWS.includes(v as ViewMode);
+export const isSort = (v: unknown): v is SortOrder => SORT_ORDERS.includes(v as SortOrder);
 export const isStr = (v: unknown): v is string => typeof v === 'string';
 export const isKey = (v: unknown): v is string => isStr(v) && v.length <= MAX_KEY_LENGTH;
 
@@ -48,6 +50,7 @@ export function readUi(raw: unknown): PersistedUi {
   };
   return {
     view: isView(r.view) ? r.view : d.view,
+    sort: isSort(r.sort) ? r.sort : d.sort,
     statuses: Array.isArray(r.statuses) ? filterToDto(filterFromDto({ statuses: strList(r.statuses) as Status[] })).statuses : d.statuses,
     sizes: strList(r.sizes, 50),
     open: per(r.open, (x) => strList(x)),

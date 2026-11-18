@@ -75,6 +75,35 @@ export async function run(): Promise<void> {
   assert.ok(nodes[0].label.startsWith('alpha') && nodes[1].label.startsWith('beta'), nodes.map((c) => c.label).join(', '));
   console.log('ok - the panel receives the state; the tree has 2 repository nodes');
 
+  // Sort: the Time view groups by last activity, newest first. Both items were created 2026-01-01; A1 also
+  // has its closing commit (a later date), so it leads with Last activity ↓.
+  type TimeState = {
+    type: string; sort?: string; view: string; ui: { openKeys: string[] };
+    tree: TreeDto & { children: (TreeDto & { children: TreeDto[] })[] };
+  };
+  const latest = () => api.lastPosted() as TimeState;
+  await api.receive({ type: 'setView', view: 'time' });
+  await waitFor('a Time state', () => latest()?.type === 'state' && latest().view === 'time');
+  const a1Key = itemKey(latest().tree, 'A1');
+  assert.ok(a1Key, 'A1 is in the Time view');
+  await api.receive({ type: 'select', key: a1Key });
+  await api.receive({ type: 'setSort', sort: 'activity-desc' });
+  await waitFor('a Time state sorted by last activity', () => latest()?.type === 'state' && latest().sort === 'activity-desc');
+  const timed = latest();
+  const days = timed.tree.children.flatMap((m) => m.children.map((d) => d.key));
+  const first = timed.tree.children[0].children[0].key;
+  assert.strictEqual(first, [...days].sort().reverse()[0], 'the newest day group comes first');
+  assert.notStrictEqual(first, 't/2026-01/2026-01-01', 'A1 is grouped by its commit, not its created date');
+  assert.ok(timed.ui.openKeys.includes(first), "the selected item's new day group is opened");
+  await api.receive({ type: 'setSort', sort: 'nonsense' });
+  await api.receive({ type: 'setView', view: 'area' });
+  await waitFor('an Area state that kept the sort', () => latest()?.view === 'area');
+  assert.strictEqual(latest().sort, 'activity-desc', 'an unknown sort is ignored');
+  await api.receive({ type: 'setSort', sort: 'created-asc' });
+  await api.receive({ type: 'setView', view: 'program' });
+  await waitFor('back to Program, created ↑', () => latest()?.view === 'program' && latest().sort === 'created-asc');
+  console.log('ok - the Sort combobox orders the Time view by last activity');
+
   // Trust and hook commands with an explicit repository key (the Attention button path).
   const state = api.lastPosted() as unknown as { repos: { key: string; name: string }[] };
   const alpha = state.repos.find((r) => r.name.startsWith('alpha'));

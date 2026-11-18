@@ -1,7 +1,15 @@
 // Stored panel state is validated: bad or old values fall back to defaults.
 import { describe, expect, it } from 'vitest';
-import { MAX_KEY_LENGTH } from '../src/protocol';
+import { SORT_ORDERS } from '@speclog/core';
+import { MAX_KEY_LENGTH, SORTS, STRING_KEYS } from '../src/protocol';
 import { defaultUi, isKey, readHiddenRepos, readTrustCommits, readUi } from '../src/uiState';
+
+describe('sort orders', () => {
+  it('the combobox offers exactly the core sort orders, each with a label', () => {
+    expect([...SORTS]).toEqual([...SORT_ORDERS]);
+    for (const s of SORTS) expect(STRING_KEYS).toContain(`sort.${s}`);
+  });
+});
 
 describe('readUi', () => {
   it('gives the defaults for missing or broken state', () => {
@@ -20,6 +28,14 @@ describe('readUi', () => {
       selected: { program: '', area: '', time: 'k' }, attentionOpen: true, attentionHeight: 4000, treeFraction: 0.1,
     });
     expect(readUi({ view: 'bogus' }).view).toBe('program');
+  });
+
+  it('keeps a valid sort and falls back to created-asc otherwise', () => {
+    expect(defaultUi().sort).toBe('created-asc');
+    expect(readUi({ sort: 'activity-desc' }).sort).toBe('activity-desc');
+    expect(readUi({ sort: 'x' }).sort).toBe('created-asc');
+    expect(readUi({ sort: 3 }).sort).toBe('created-asc');
+    expect(readUi({}).sort).toBe('created-asc');
   });
 });
 

@@ -43,6 +43,7 @@ const props = new PropertiesView();
 const attention = new AttentionView();
 const topBar = new TopBar({
   setView: (view) => post({ type: 'setView', view }),
+  setSort: (sort) => post({ type: 'setSort', sort }),
   setFilter: (filter) => post({ type: 'setFilter', filter }),
   preset: (preset) => post({ type: 'preset', preset }),
   toggleAttention: () => {
@@ -127,13 +128,13 @@ window.addEventListener('resize', applyLayout);
 function renderTopBar(): void {
   if (!state) return;
   topBar.update({
-    view: state.view, filter: state.filter, counts: state.counts, repos: state.repos, summary: state.summary, busy: state.busy,
+    view: state.view, sort: state.sort, filter: state.filter, counts: state.counts, repos: state.repos, summary: state.summary, busy: state.busy,
     fetch: state.fetch, attentionCount: state.attention.length, attentionOpen,
   });
 }
 
 function renderState(m: StateMessage): void {
-  if (state && state.view !== m.view) pendingToggles = new Map();
+  if (state && (state.view !== m.view || state.sort !== m.sort)) pendingToggles = new Map();
   state = m;
   attentionOpen = m.ui.attentionOpen;
   attentionHeight = m.ui.attentionHeight;

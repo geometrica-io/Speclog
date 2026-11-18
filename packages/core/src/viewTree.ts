@@ -6,6 +6,49 @@ import { foldForSearch, isValidDate } from './text';
 
 export type ViewMode = 'program' | 'area' | 'time';
 
+/** How items are ordered: by created date or by last activity, oldest (asc) or newest (desc) first. */
+export type SortOrder = 'created-asc' | 'created-desc' | 'activity-asc' | 'activity-desc';
+export const SORT_ORDERS: readonly SortOrder[] = ['created-asc', 'created-desc', 'activity-asc', 'activity-desc'];
+/** Today's order: the Time view by created date, oldest first; other views in file order. */
+export const DEFAULT_SORT: SortOrder = 'created-asc';
+
+/** Newest valid date of the item's created date, its commits (main or any branch read) and its done date; "" when none. */
+export function lastActivity(r: ResolvedItem): string {
+  let best = '';
+  for (const d of [r.item.created, r.doneDate, ...r.commits.map((c) => c.date)]) {
+    if (isValidDate(d) && d > best) best = d;
+  }
+  return best;
+}
+
+/** The date an item is ordered and (in the Time view) grouped by; "" when it has none. */
+function sortDate(r: ResolvedItem, sort: SortOrder): string {
+  if (sort.startsWith('activity')) return lastActivity(r);
+  return isValidDate(r.item.created) ? r.item.created : '';
+}
+
+/** Dates in the given direction; items without a date last either way. */
+function cmpDate(a: string, b: string, desc: boolean): number {
+  if (a === b) return 0;
+  if (a === '') return 1;
+  if (b === '') return -1;
+  return desc ? cmp(b, a) : cmp(a, b);
+}
+
+/** Stable re-order of the leaves under every node by the sort date; branch nodes keep their places. */
+function orderLeaves(n: TreeNode, sort: SortOrder): void {
+  const desc = sort.endsWith('desc');
+  const pos: number[] = [];
+  n.children.forEach((c, i) => { if (c.item) pos.push(i); });
+  if (pos.length > 1) {
+    // Each leaf's date once, not per comparison.
+    const sorted = pos.map((i) => ({ leaf: n.children[i], date: sortDate(n.children[i].item!, sort) }))
+      .sort((a, b) => cmpDate(a.date, b.date, desc));
+    pos.forEach((p, k) => { n.children[p] = sorted[k].leaf; });
+  }
+  for (const c of n.children) if (!c.item) orderLeaves(c, sort);
+}
+
 export interface Filter {
   statuses: Set<Status>;
   /** Repository keys (origin URL or path); hiding one hides every clone of it. */
@@ -137,16 +180,16 @@ function sortArea(n: TreeNode, root: boolean): void {
   for (const c of n.children) if (!c.item) sortArea(c, false);
 }
 
-function sortTime(n: TreeNode): void {
+function sortTime(n: TreeNode, desc: boolean): void {
   n.children.sort((a, b) => {
     const al = !!a.item, bl = !!b.item;
     if (al !== bl) return al ? 1 : -1;
     if (al) return lessLeaf(a, b);
     const an = a.key === NO_DATE_KEY, bn = b.key === NO_DATE_KEY;
-    if (an !== bn) return an ? 1 : -1;
-    return cmp(a.key, b.key);
+    if (an !== bn) return an ? 1 : -1; // "(no date)" last in both directions
+    return desc ? cmp(b.key, a.key) : cmp(a.key, b.key);
   });
-  for (const c of n.children) if (!c.item) sortTime(c);
+  for (const c of n.children) if (!c.item) sortTime(c, desc);
 }
 
 /** Last two path segments, for telling same-named repositories apart. */
@@ -225,9 +268,9 @@ function buildArea(ws: Workspace, root: TreeNode): void {
   sortArea(root, true);
 }
 
-function buildTime(ws: Workspace, root: TreeNode): void {
+function buildTime(ws: Workspace, root: TreeNode, sort: SortOrder): void {
   for (const r of ws.items) {
-    const d = r.item.created;
+    const d = sortDate(r, sort);
     let cur: TreeNode;
     if (!isValidDate(d)) {
       cur = findOrAdd(root.children, NO_DATE_KEY, '(no date)');
@@ -238,7 +281,7 @@ function buildTime(ws: Workspace, root: TreeNode): void {
     }
     cur.children.push(makeLeaf(r));
   }
-  sortTime(root);
+  sortTime(root, sort.endsWith('desc'));
 }
 
 export function matches(r: ResolvedItem, f: Filter): boolean {
@@ -257,11 +300,12 @@ export function narrowing(f: Filter): boolean {
   return f.search !== '' || f.sizes.size > 0 || NON_DROPPED.some((s) => !f.statuses.has(s));
 }
 
-export function buildTree(ws: Workspace, mode: ViewMode, f: Filter): TreeNode {
+export function buildTree(ws: Workspace, mode: ViewMode, f: Filter, sort: SortOrder = DEFAULT_SORT): TreeNode {
   const root = node('root', '');
   if (mode === 'program') buildProgram(ws, f, root);
   else if (mode === 'area') buildArea(ws, root);
-  else buildTime(ws, root);
+  else buildTime(ws, root, sort);
+  if (sort !== DEFAULT_SORT) orderLeaves(root, sort); // the default keeps today's order exactly
   count(root);
   prune(root, f);
   return root;
