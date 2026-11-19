@@ -23,6 +23,8 @@ export interface SpeclogApi {
   receive(m: unknown): Promise<void>;
   /** Repositories in the report tab's newest computed model; -1 when none was computed yet. */
   lastReportRepoCount(): number;
+  /** The report tab's webview script ran and sent "ready". */
+  reportWebviewReady(): boolean;
 }
 
 let host: SpeclogHost | undefined;
@@ -54,6 +56,7 @@ export function activate(context: vscode.ExtensionContext): SpeclogApi {
     lastDetails: () => h.lastDetails,
     receive: (m) => h.receive(m),
     lastReportRepoCount: () => ReportPanel.lastRepoCount(),
+    reportWebviewReady: () => ReportPanel.webviewReady(),
   };
 }
 

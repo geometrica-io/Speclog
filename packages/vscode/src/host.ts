@@ -62,12 +62,18 @@ export class SpeclogHost implements vscode.Disposable {
   private readonly stateEmitter = new vscode.EventEmitter<EngineState>();
   /** Fires with each engine state once the first scan has finished. */
   readonly onDidChangeState = this.stateEmitter.event;
+  /** Why the engine could not start (git missing); "" once it runs. */
+  private startError = '';
+  private readonly failEmitter = new vscode.EventEmitter<void>();
+  /** Fires when no first scan can come: git is missing, or the engine reported an error before its first scan settled. */
+  readonly onDidFail = this.failEmitter.event;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.ui = readUi(context.workspaceState.get(UI_KEY));
     this.subscriptions.push(
       this.statusBar,
       this.stateEmitter,
+      this.failEmitter,
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration(SECTION)) this.reconfigure();
       }),
@@ -87,12 +93,15 @@ export class SpeclogHost implements vscode.Disposable {
     if (this.disposed) return;
     if (!git.ok) {
       this.statusBar.gitMissing();
+      this.startError = vscode.l10n.t('Speclog: git 2.31 or newer was not found ({0}).', git.error);
       if (!this.gitErrorShown) {
         this.gitErrorShown = true;
-        void vscode.window.showErrorMessage(vscode.l10n.t('Speclog: git 2.31 or newer was not found ({0}).', git.error));
+        void vscode.window.showErrorMessage(this.startError);
       }
+      this.failEmitter.fire();
       return;
     }
+    this.startError = '';
     const engine = new Engine(readEngineConfig(this.trustCommits()));
     this.engine = engine;
     this.subscriptions.push(engine.onDidChange((s) => this.onState(s)));
@@ -175,7 +184,14 @@ export class SpeclogHost implements vscode.Disposable {
     return readEngineConfig(this.trustCommits()).unverifiedMode;
   }
 
-  /** Keys of the scanned repositories the board shows (hidden ones left out), sorted by name. */
+  /** Why currentState() stays undefined: git missing, or an engine error before the first scan settled; "" otherwise. */
+  unavailableReason(): string {
+    if (this.settled) return '';
+    const engineError = this.state?.engineError ?? '';
+    return this.startError || (engineError ? vscode.l10n.t('Speclog: the scan failed: {0}', engineError) : '');
+  }
+
+  /** Keys of the scanned repositories the board shows (hidden ones left out), sorted by name (repoInfos' order). */
   visibleRepoKeys(): string[] {
     const hidden = new Set(this.hiddenRepos());
     return [...new Set(this.repoInfos().map((r) => r.key))].filter((k) => !hidden.has(k));
@@ -228,6 +244,7 @@ export class SpeclogHost implements vscode.Disposable {
     if (!s.busy) this.settled = true;
     this.statusBar.update(summarize(s));
     if (this.settled) this.stateEmitter.fire(s);
+    else if (s.engineError !== '') this.failEmitter.fire();
     if (!this.pendingTimer) this.pendingTimer = setTimeout(() => this.flushState(), COALESCE_MS);
   }
 

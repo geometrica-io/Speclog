@@ -3,7 +3,7 @@ import { PERIOD_PRESETS } from '@speclog/core';
 import type { RepoSnapshot } from '@speclog/core';
 import { MAX_KEY_LENGTH } from '../src/protocol';
 import { LatestRun } from '../src/report/latestRun';
-import { localDay, localStamp, repoChoices, repoPathsOf } from '../src/report/panelPure';
+import { ReportGate, localDay, localStamp, repoChoices, repoPathsOf, repoSignature } from '../src/report/panelPure';
 import { REPORT_MAX_KEY_LENGTH, REPORT_PRESETS, parseReportMessage } from '../src/reportProtocol';
 
 describe('parseReportMessage', () => {
@@ -89,5 +89,46 @@ describe('report panel helpers', () => {
     const d = new Date(2026, 0, 5, 7, 3);
     expect(localDay(d)).toBe('2026-01-05');
     expect(localStamp(d)).toBe('2026-01-05 07:03');
+  });
+});
+
+describe('ReportGate', () => {
+  const w1 = { id: 1 }, w2 = { id: 2 };
+  it('shows only the newest run and marks it stale after a newer workspace', () => {
+    const g = new ReportGate<object>();
+    const a = g.begin(w1);
+    const b = g.begin(w1);
+    expect(g.settle(a, { ok: true }, '')).toBe('ignore');
+    expect(g.isStale(w2)).toBe(false);
+    expect(g.settle(b, { ok: true }, '')).toBe('show');
+    expect(g.isStale(w1)).toBe(false);
+    expect(g.isStale(undefined)).toBe(false);
+    expect(g.isStale(w2)).toBe(true);
+  });
+  it('is silent for a cancelled run and reports other errors', () => {
+    const g = new ReportGate<object>();
+    expect(g.settle(g.begin(w1), null, 'cancelled')).toBe('ignore');
+    expect(g.settle(g.begin(w1), null, 'boom')).toBe('error');
+    expect(g.isStale(w2)).toBe(false);
+  });
+  it('a new run clears the stale flag until it shows', () => {
+    const g = new ReportGate<object>();
+    g.settle(g.begin(w1), { ok: true }, '');
+    expect(g.isStale(w2)).toBe(true);
+    const c = g.begin(w2);
+    expect(g.isStale(w2)).toBe(false);
+    g.cancel();
+    expect(c.signal.aborted).toBe(true);
+    expect(g.settle(c, { ok: true }, '')).toBe('ignore');
+  });
+});
+
+describe('repoSignature', () => {
+  it('changes with the repository keys or names, not with the selection or clone order', () => {
+    const a = [snap('u1', 'beta', '/b'), snap('u2', 'alpha', '/a')];
+    expect(repoSignature(a)).toBe(repoSignature([...a].reverse()));
+    expect(repoSignature(a)).not.toBe(repoSignature([snap('u1', 'beta2', '/b'), snap('u2', 'alpha', '/a')]));
+    expect(repoSignature(a)).not.toBe(repoSignature([...a, snap('u3', 'c', '/c')]));
+    expect(repoSignature(a)).toBe(repoSignature([...a, snap('u2', 'alpha', '/a2')]));
   });
 });
