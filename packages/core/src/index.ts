@@ -16,3 +16,4 @@ export * from './scheduler';
 export * from './engine';
 export * from './replay';
 export * from './reportPeriod';
+export * from './report';
