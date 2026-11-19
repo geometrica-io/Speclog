@@ -84,7 +84,7 @@ describe('buildReport', () => {
     b.branches.push(branch('feature/y', [commit('hb', '2026-11-14', [])], [prog('a.md', [mkItem('A'), mkItem('NEW', 'open', { line: 5 })])]));
     const start = ws(branchSnap());
     const live = build(start, ws(b), { endIsLive: true }).repos[0];
-    expect(live.inProgress.map((i) => [i.id, i.progressReason?.kind])).toEqual([['NEW', 'branchOnly']]);
+    expect(live.inProgress.map((i) => [i.id, i.progressReason?.kind, i.isNew])).toEqual([['NEW', 'branchOnly', false]]);
     expect(live.end.total).toBe(1);
     expect(live.added).toEqual([]);
     expect(live.remaining.map((i) => i.id)).toEqual(['A']);
@@ -207,6 +207,56 @@ describe('buildReport', () => {
     expect(m.total.curve).toEqual([{ done: 0, total: 3 }, { done: 1, total: 3 }]);
     expect(m.repos[1].curve).toEqual([{ done: 0, total: 2 }, { done: 1, total: 2 }]);
     expect(m.startDay).toBe('2026-11-09');
+  });
+
+  it('created and dropped inside the period: changed dropped with isNew, not Added, not in totals', () => {
+    const start = ws(repo('R', [prog('a.md', [mkItem('A')])]));
+    const end = ws(repo('R', [prog('a.md', [mkItem('A'), mkItem('N', 'dropped')])]));
+    const r = build(start, end).repos[0];
+    expect(r.changed.map((i) => [i.id, i.change, i.isNew])).toEqual([['N', 'dropped', true]]);
+    expect(r.added).toEqual([]);
+    expect(r.end.total).toBe(1);
+  });
+
+  it('dropped at both ends is in no list; dropped at start and gone at end is not removed', () => {
+    const start = ws(repo('R', [prog('a.md', [mkItem('A', 'dropped'), mkItem('B', 'dropped')])]));
+    const end = ws(repo('R', [prog('a.md', [mkItem('A', 'dropped')])]));
+    const r = build(start, end).repos[0];
+    expect([r.changed, r.finished, r.inProgress, r.remaining, r.added].map((l) => l.length)).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it('closedCommit prefers a closing commit of the items own repository on the same day', () => {
+    const end = ws(repo('R', [prog('a.md', [mkItem('A')])], [commit('hr', '2026-11-12', [ref('A')])]));
+    end.items[0].commits = [
+      { repo: 'Other', hash: 'hx', date: '2026-11-12', subject: 'other', closes: true },
+      { repo: 'R', hash: 'hr', date: '2026-11-12', subject: 's hr', closes: true },
+    ];
+    const r = build(ws(repo('R', [prog('a.md', [mkItem('A')])])), end).repos[0];
+    expect(r.finished[0].closedCommit?.hash).toBe('hr');
+  });
+
+  it('reopened item with a progress commit in the period goes to Changed, not In progress', () => {
+    const start = ws(repo('R', [prog('a.md', [mkItem('A')])], [commit('h0', '2026-11-01', [ref('A')])]));
+    const end = ws(repo('R', [prog('a.md', [mkItem('A', 'bug')])], [commit('h1', '2026-11-12', [], [ref('A')])]));
+    const r = build(start, end).repos[0];
+    expect(r.changed.map((i) => [i.id, i.change])).toEqual([['A', 'reopened']]);
+    expect(r.inProgress).toEqual([]);
+  });
+
+  it('program title falls back to the path', () => {
+    const titled: Program = { ...prog('b.md', [mkItem('B')]), title: 'Beta' };
+    const s = ws(repo('R', [prog('a.md', [mkItem('A')]), titled]));
+    const r = build(s, s).repos[0];
+    expect(r.programs.map((p) => p.title)).toEqual(['a.md', 'Beta']);
+    expect(r.remaining.map((i) => i.programTitle)).toEqual(['a.md', 'Beta']);
+  });
+
+  it('Changed sorts removed and end items together by program path then line', () => {
+    const start = ws(repo('R', [prog('b.md', [mkItem('B1', 'open', { line: 1 })]),
+      prog('a.md', [mkItem('GONE', 'open', { line: 8 }), mkItem('D', 'open', { line: 3 })])]));
+    const end = ws(repo('R', [prog('b.md', [mkItem('B1', 'dropped', { line: 1 })]), prog('a.md', [mkItem('D', 'dropped', { line: 3 })])]));
+    const r = build(start, end).repos[0];
+    expect(r.changed.map((i) => [i.id, i.change])).toEqual([['D', 'dropped'], ['GONE', 'removed'], ['B1', 'dropped']]);
   });
 });
 
