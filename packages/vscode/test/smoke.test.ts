@@ -125,8 +125,9 @@ export async function run(): Promise<void> {
   await vscode.commands.executeCommand('speclog.openReport');
   await waitFor('a Speclog Report webview tab', () => vscode.window.tabGroups.all.flatMap((g) => g.tabs)
     .some((t) => t.label === 'Speclog Report' && t.input instanceof vscode.TabInputWebview));
+  await waitFor('the report webview script to send "ready"', () => api.reportWebviewReady());
   await waitFor('a report of both sample repositories', () => api.lastReportRepoCount() === 2);
-  console.log('ok - speclog.openReport opens the report tab and computes both repositories');
+  console.log('ok - speclog.openReport opens the report tab, its script runs under the CSP, both repositories are computed');
   // The report tab covers the board, whose hidden webview stops taking messages: close it, show the board.
   const reportTabs = vscode.window.tabGroups.all.flatMap((g) => g.tabs).filter((t) => t.label === 'Speclog Report');
   await vscode.window.tabGroups.close(reportTabs);

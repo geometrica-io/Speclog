@@ -6,8 +6,7 @@ import * as vscode from 'vscode';
 import { EngineState, PeriodPreset, ReportModel, computeReport, periodOf } from '@speclog/core';
 import type { Period } from '@speclog/core';
 import type { SpeclogHost } from './host';
-import { LatestRun } from './report/latestRun';
-import { localDay, localStamp, repoChoices, repoPathsOf } from './report/panelPure';
+import { ReportGate, localDay, localStamp, repoChoices, repoPathsOf, repoSignature } from './report/panelPure';
 import { REPORT_CSS, renderReportBody } from './report/renderHtml';
 import { REPORT_PRESETS, parseReportMessage } from './reportProtocol';
 import type { ReportHostToWebview, ReportWebviewToHost } from './reportProtocol';
@@ -17,17 +16,21 @@ export class ReportPanel implements vscode.Disposable {
   private static current: ReportPanel | undefined;
   /** Repositories in the newest computed model; -1 before the first one (smoke-test hook). */
   private static lastRepos = -1;
+  /** A report webview sent "ready" (its script ran under the CSP; smoke-test hook). */
+  private static everReady = false;
+  /** One disposer in context.subscriptions for every panel opened in this session. */
+  private static disposerRegistered = false;
 
   private readonly subscriptions: vscode.Disposable[] = [];
-  private readonly run = new LatestRun();
+  private readonly gate = new ReportGate<EngineState['workspace']>();
   private ready = false;
   private preset: PeriodPreset = 'thisWeek';
   private from = '';
   private to = '';
   /** Selected repository keys; undefined until the first engine state (then the board's visible ones). */
   private selected: string[] | undefined;
-  /** The workspace the shown (or running) report was computed from. */
-  private computedFrom: EngineState['workspace'] | undefined;
+  /** The repository list last sent in `controls` (keys and names). */
+  private sentRepos: string | undefined;
   private model: ReportModel | undefined;
   /** What the webview shows below the controls (progress, report or error): resent when it is shown again. */
   private lastView: ReportHostToWebview | undefined;
@@ -45,15 +48,22 @@ export class ReportPanel implements vscode.Disposable {
       localResourceRoots: [dist],
     });
     panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'assets', 'speclog.svg');
-    const p = new ReportPanel(panel, host, context, dist);
-    ReportPanel.current = p;
-    // Deactivation aborts a running computation (dispose is idempotent).
-    context.subscriptions.push(p);
+    ReportPanel.current = new ReportPanel(panel, host, context, dist);
+    if (!ReportPanel.disposerRegistered) {
+      ReportPanel.disposerRegistered = true;
+      // Deactivation aborts a running computation of whichever panel is open.
+      context.subscriptions.push({ dispose: () => ReportPanel.current?.dispose() });
+    }
   }
 
   /** Repositories in the newest computed model; -1 when none was computed yet. */
   static lastRepoCount(): number {
     return ReportPanel.lastRepos;
+  }
+
+  /** A report webview's script ran and sent "ready". */
+  static webviewReady(): boolean {
+    return ReportPanel.everReady;
   }
 
   /** The newest computed model, for export. */
@@ -73,6 +83,8 @@ export class ReportPanel implements vscode.Disposable {
       // A hidden webview is discarded; it sends "ready" again when shown.
       panel.onDidChangeViewState((e) => { if (!e.webviewPanel.visible) this.ready = false; }),
       host.onDidChangeState((s) => this.onState(s)),
+      // No first scan will come (git missing, engine error): show why instead of waiting.
+      host.onDidFail(() => { if (!this.host.currentState()) this.compute(); }),
     );
     panel.webview.html = this.html(panel.webview, dist);
     this.setPeriod('thisWeek', '', '');
@@ -94,19 +106,24 @@ export class ReportPanel implements vscode.Disposable {
       this.compute();
       return;
     }
-    this.postControls();
+    if (repoSignature(s.workspace.snapshots) !== this.sentRepos) this.postControls();
     this.postStaleIfNewer();
   }
 
   /** Starts a computation of the current period and selection; any running one is aborted. */
   private compute(): void {
     const state = this.host.currentState();
-    const run = this.run.begin();
+    const run = this.gate.begin(state?.workspace);
+    if (!state) {
+      // onState computes once the first scan has finished; until then the reason it cannot, if any.
+      const why = this.host.unavailableReason();
+      if (why) this.postView({ type: 'error', text: why });
+      else this.postBusy(0, 0);
+      return;
+    }
     this.postBusy(0, 0);
-    if (!state) return; // onState computes once the first scan has finished.
     if (this.selected === undefined) this.selected = this.host.visibleRepoKeys();
     const ws = state.workspace;
-    this.computedFrom = ws;
     const today = localDay(new Date());
     // Recomputed here, so a preset ending today follows the date.
     const period = this.setPeriod(this.preset, this.from, this.to, today);
@@ -116,15 +133,14 @@ export class ReportPanel implements vscode.Disposable {
       selectedRepoPaths: repoPathsOf(ws.snapshots, this.selected), signal: run.signal,
       onProgress: (done, total) => { if (run.isCurrent()) this.postBusy(done, total); },
     }).then((r) => {
-      if (!run.isCurrent() || this.disposed) return;
-      if (!r.model) {
-        if (r.error !== 'cancelled') this.postError(r.error);
-        return;
-      }
-      this.show(r.model);
+      if (this.disposed) return;
+      const next = this.gate.settle(run, r.model, r.error);
+      if (next === 'show' && r.model) this.show(r.model);
+      else if (next === 'error') this.postError(r.error);
     }, (e: unknown) => {
-      if (!run.isCurrent() || this.disposed) return;
-      this.postError(e instanceof Error ? e.message : String(e));
+      if (this.disposed) return;
+      const why = e instanceof Error ? e.message : String(e);
+      if (this.gate.settle(run, null, why) === 'error') this.postError(why);
     });
   }
 
@@ -152,12 +168,12 @@ export class ReportPanel implements vscode.Disposable {
 
   /** A shown report from an older workspace than the engine's newest offers a Refresh. */
   private postStaleIfNewer(): void {
-    const s = this.host.currentState();
-    if (this.lastView?.type === 'report' && s && s.workspace !== this.computedFrom) this.send({ type: 'stale' });
+    if (this.gate.isStale(this.host.currentState()?.workspace)) this.send({ type: 'stale' });
   }
 
   private postControls(): void {
     const snapshots = this.host.currentState()?.workspace.snapshots ?? [];
+    this.sentRepos = repoSignature(snapshots);
     this.send({ type: 'controls', preset: this.preset, from: this.from, to: this.to, repos: repoChoices(snapshots, this.selected ?? []) });
   }
 
@@ -168,6 +184,7 @@ export class ReportPanel implements vscode.Disposable {
     switch (m.type) {
       case 'ready':
         this.ready = true;
+        ReportPanel.everReady = true;
         this.send({ type: 'init', strings: reportWebviewStrings(), presets: [...REPORT_PRESETS] });
         this.postControls();
         // A re-shown webview gets what it had: the progress, the report or the error.
@@ -188,6 +205,8 @@ export class ReportPanel implements vscode.Disposable {
         break;
       }
       case 'refresh':
+        // Without a scan yet (git was missing), Refresh also retries starting the engine.
+        if (!this.host.currentState()) this.host.refresh();
         this.compute();
         break;
       case 'export':
@@ -226,7 +245,7 @@ export class ReportPanel implements vscode.Disposable {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.run.cancel();
+    this.gate.cancel();
     if (ReportPanel.current === this) ReportPanel.current = undefined;
     for (const d of this.subscriptions.splice(0)) d.dispose();
     this.panel.dispose();
