@@ -2,14 +2,18 @@
 // rendered report. The host computes (core computeReport, cancellable) and renders (renderReportBody); the
 // webview only shows the HTML and sends intents (see reportProtocol.ts).
 import * as crypto from 'crypto';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { EngineState, PeriodPreset, ReportModel, computeReport, periodOf } from '@speclog/core';
 import type { Period } from '@speclog/core';
 import type { SpeclogHost } from './host';
+import { reportFileName } from './report/fileName';
+import { renderReportMarkdown } from './report/renderMarkdown';
 import { ReportGate, localDay, localStamp, repoChoices, repoPathsOf, repoSignature } from './report/panelPure';
-import { REPORT_CSS, renderReportBody } from './report/renderHtml';
+import { REPORT_CSS, renderReportBody, renderReportDocument } from './report/renderHtml';
 import { REPORT_PRESETS, parseReportMessage } from './reportProtocol';
-import type { ReportHostToWebview, ReportWebviewToHost } from './reportProtocol';
+import type { ReportFormat, ReportHostToWebview, ReportWebviewToHost } from './reportProtocol';
 import { reportStrings, reportWebviewStrings } from './strings';
 
 export class ReportPanel implements vscode.Disposable {
@@ -147,10 +151,46 @@ export class ReportPanel implements vscode.Disposable {
   private show(model: ReportModel): void {
     this.model = model;
     ReportPanel.lastRepos = model.repos.length;
-    const version = String((this.context.extension.packageJSON as { version?: unknown }).version ?? '');
-    const html = renderReportBody(model, reportStrings(), { generated: localStamp(new Date()), version });
+    const html = renderReportBody(model, reportStrings(), this.meta());
     this.postView({ type: 'report', html });
     this.postStaleIfNewer();
+  }
+
+  private meta(): { generated: string; version: string } {
+    const version = String((this.context.extension.packageJSON as { version?: unknown }).version ?? '');
+    return { generated: localStamp(new Date()), version };
+  }
+
+  /** Exports the newest model (a stale one as is); the buttons are disabled until one exists. */
+  private async export(format: ReportFormat): Promise<void> {
+    const model = this.model;
+    if (!model) return;
+    const strings = reportStrings();
+    const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
+    if (format === 'pdf') {
+      // Opened in the browser, where it is printed or saved as PDF; every list printed open.
+      const html = renderReportDocument(model, strings, this.meta(), { expandAll: true });
+      const name = reportFileName(model.period, 'html').replace(/.html$/, `-${crypto.randomBytes(6).toString('hex')}.html`);
+      const file = vscode.Uri.file(path.join(os.tmpdir(), name));
+      await vscode.workspace.fs.writeFile(file, bytes(html));
+      await vscode.env.openExternal(file);
+      void vscode.window.showInformationMessage(vscode.l10n.t('The report opened in your browser. Print it or save it as PDF there.'));
+      return;
+    }
+    const content = format === 'html' ? renderReportDocument(model, strings, this.meta()) : renderReportMarkdown(model, strings, this.meta());
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
+    const def = reportFileName(model.period, format);
+    const target = await vscode.window.showSaveDialog({
+      defaultUri: folder ? vscode.Uri.joinPath(folder, def) : vscode.Uri.file(path.join(os.homedir(), def)),
+      filters: format === 'html' ? { HTML: ['html'] } : { Markdown: ['md'] },
+    });
+    if (!target) return;
+    await vscode.workspace.fs.writeFile(target, bytes(content));
+    const open = vscode.l10n.t('Open');
+    const choice = await vscode.window.showInformationMessage(vscode.l10n.t('Report saved to {0}.', target.fsPath), open);
+    if (choice !== open) return;
+    if (format === 'md') await vscode.window.showTextDocument(target);
+    else await vscode.env.openExternal(target);
   }
 
   private postBusy(done: number, total: number): void {
@@ -210,7 +250,9 @@ export class ReportPanel implements vscode.Disposable {
         this.compute();
         break;
       case 'export':
-        // Export of lastModel comes with the export task (REP.4).
+        this.export(m.format).catch((e: unknown) => {
+          void vscode.window.showErrorMessage(vscode.l10n.t('Speclog: the report could not be exported: {0}', e instanceof Error ? e.message : String(e)));
+        });
         break;
     }
   }

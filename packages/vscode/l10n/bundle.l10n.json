@@ -231,5 +231,9 @@
   "Computing the report…": "Computing the report…",
   "Computing the report… {0} / {1}": "Computing the report… {0} / {1}",
   "Data changed": "Data changed",
-  "Speclog: the scan failed: {0}": "Speclog: the scan failed: {0}"
+  "Speclog: the scan failed: {0}": "Speclog: the scan failed: {0}",
+  "Open": "Open",
+  "Report saved to {0}.": "Report saved to {0}.",
+  "The report opened in your browser. Print it or save it as PDF there.": "The report opened in your browser. Print it or save it as PDF there.",
+  "Speclog: the report could not be exported: {0}": "Speclog: the report could not be exported: {0}"
 }

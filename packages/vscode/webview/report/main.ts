@@ -35,6 +35,8 @@ const content = h('div', { class: 'content' });
 stale.hidden = true;
 error.hidden = true;
 progress.hidden = true;
+// Enabled by the first report: there is nothing to export before.
+for (const b of [exportHtml, exportMd, exportPdf]) b.disabled = true;
 
 const bar = h('div', { class: 'controls' },
   h('div', { class: 'group' }, periodLabel, period, fromLabel, from, toLabel, to,
@@ -160,6 +162,7 @@ window.addEventListener('message', (e: MessageEvent<ReportHostToWebview>) => {
       content.classList.remove('busy');
       // Built by the host's renderer: every model string in it is escaped; the CSP allows no inline script.
       content.innerHTML = m.html;
+      for (const b of [exportHtml, exportMd, exportPdf]) b.disabled = false;
       break;
     case 'error':
       progress.hidden = true;
