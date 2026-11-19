@@ -25,8 +25,27 @@ describe('periodOf', () => {
     const bad = periodOf('custom', T, 'x', 'y');
     expect(bad.preset).toBe('thisWeek');
     expect(r(bad)).toBe('2026-11-16..2026-11-19');
-    expect(periodOf('custom', T, '2026-12-01', '2026-12-05').preset).toBe('thisWeek');
     expect(periodOf('custom', T, '2026-11-02', '2026-11-05').preset).toBe('custom');
+  });
+  it('custom entirely in the future is clamped to today', () => {
+    const p = periodOf('custom', T, '2026-12-01', '2026-12-05');
+    expect(p).toEqual({ preset: 'custom', from: T, to: T });
+  });
+  it('custom from today', () => {
+    expect(periodOf('custom', T, T, T)).toEqual({ preset: 'custom', from: T, to: T });
+  });
+  it('lastMonth in a leap year', () => {
+    expect(r(periodOf('lastMonth', '2024-03-10'))).toBe('2024-02-01..2024-02-29');
+  });
+  it('lastWeek across the new year', () => {
+    expect(r(periodOf('lastWeek', '2026-01-02'))).toBe('2025-12-22..2025-12-28');
+  });
+  it('thisWeek on a Sunday', () => {
+    expect(r(periodOf('thisWeek', '2026-11-22'))).toBe('2026-11-16..2026-11-22');
+  });
+  it('an invalid today is a clear error, not a RangeError', () => {
+    expect(() => periodOf('thisWeek', '2026-13-01')).toThrow('periodOf: invalid today "2026-13-01"');
+    expect(() => periodOf('custom', '', '2026-11-01', '2026-11-02')).toThrow('periodOf: invalid today ""');
   });
 });
 
