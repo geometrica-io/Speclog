@@ -9,6 +9,12 @@ export { REPORT_CSS };
 export interface ReportMeta { generated: string; version: string; }
 
 const LONG_LIST = 20;
+/** A repository with more list rows starts a new printed page. */
+const LONG_REPO_ROWS = 40;
+
+/** Rows of a repository's item lists. */
+export const listRows = (r: RepoReport): number =>
+  r.finished.length + r.inProgress.length + r.added.length + r.remaining.length + r.changed.length;
 
 export function escapeHtml(v: string): string {
   return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -31,20 +37,33 @@ export function delta(a: Progress, b: Progress): { text: string; cls: string } {
 
 const num = (n: number): string => String(Number(n.toFixed(2)));
 
-/** Polyline of the percent over the points (total 0 skipped), y axis 0-100 %. */
-export function curveSvg(points: Progress[], width: number, height: number, label = ''): string {
+/**
+ * Polyline of the percent over the points (total 0 skipped), y axis 0-100 %. axis: the x axis' first and last
+ * labels; with it the plot leaves room for them and for the 0% / 100% ticks.
+ */
+export function curveSvg(points: Progress[], width: number, height: number, label = '', axis?: { from: string; to: string }): string {
+  const left = axis ? 40 : 0, right = axis ? 8 : 0, top = axis ? 8 : 0, bottom = axis ? 20 : 0;
+  const w = width - left - right, h = height - top - bottom;
+  const yOf = (v: number): string => num(top + h - (v / 100) * h);
   const n = points.length;
   const pts: string[] = [];
   points.forEach((p, i) => {
     const v = percent(p);
     if (v === null) return;
-    const x = n > 1 ? (i * width) / (n - 1) : width / 2;
-    pts.push(`${num(x)},${num(height - (v / 100) * height)}`);
+    const x = left + (n > 1 ? (i * w) / (n - 1) : w / 2);
+    pts.push(`${num(x)},${yOf(v)}`);
   });
   const grid = [0, 50, 100].map((g) => {
-    const y = num(height - (g / 100) * height);
-    return `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="#e4e7eb" stroke-width="1"/>`;
+    const y = yOf(g);
+    return `<line x1="${left}" y1="${y}" x2="${left + w}" y2="${y}" stroke="#e4e7eb" stroke-width="1"/>`;
   }).join('');
+  let ticks = '';
+  if (axis) {
+    const t = (x: number | string, y: number | string, anchor: string, text: string): string =>
+      `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="11" fill="#616e7c">${e(text)}</text>`;
+    ticks = t(left - 6, num(Number(yOf(0)) + 4), 'end', '0%') + t(left - 6, num(Number(yOf(100)) + 4), 'end', '100%')
+      + t(left, height - 4, 'start', axis.from) + t(left + w, height - 4, 'end', axis.to);
+  }
   let line = '';
   if (pts.length > 1) line = `<polyline points="${pts.join(' ')}" fill="none" stroke="#1f5fa8" stroke-width="2" stroke-linejoin="round"/>`;
   else if (pts.length === 1) {
@@ -53,7 +72,7 @@ export function curveSvg(points: Progress[], width: number, height: number, labe
   }
   const name = label ? ` aria-label="${e(label)}"` : '';
   const title = label ? `<title>${e(label)}</title>` : '';
-  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img"${name} xmlns="http://www.w3.org/2000/svg">${title}${grid}${line}</svg>`;
+  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img"${name} xmlns="http://www.w3.org/2000/svg">${title}${grid}${ticks}${line}</svg>`;
 }
 
 /** Header cells are escaped here; body cells arrive as ready (escaped) HTML. */
@@ -122,36 +141,46 @@ function programRows(programs: ProgramReport[], s: ReportStrings): string {
   return `<details open><summary>${e(s.colProgram)} (${programs.length})</summary>${t}</details>`;
 }
 
-function repoSection(r: RepoReport, s: ReportStrings): string {
+function repoSection(r: RepoReport, s: ReportStrings, axis: { from: string; to: string }): string {
   const reopened = r.changed.filter((c) => c.change === 'reopened');
   const gone = r.changed.filter((c) => c.change !== 'reopened');
   const statusOf = (it: ReportItem): string => e(s.status[it.status] ?? it.status);
   const changeOf = (it: ReportItem): string => e(it.change === 'removed' ? s.changeRemoved : s.changeDropped);
-  return `<section class="repo"><h2>${e(r.name)}</h2>
+  const cls = listRows(r) > LONG_REPO_ROWS ? 'repo long' : 'repo';
+  return `<section class="${cls}"><h2>${e(r.name)}</h2>
 <p class="meta">${e(pct(r.start))} → ${e(pct(r.end))}</p>
 ${programRows(r.programs, s)}
-<div class="curve">${curveSvg(r.curve, 640, 160, `${pct(r.start)} → ${pct(r.end)}`)}</div>
+<div class="curve">${curveSvg(r.curve, 640, 180, `${pct(r.start)} → ${pct(r.end)}`, axis)}</div>
 ${listSection(s.finished, r.finished, s, s.colClosed, closedCell)}
 ${listSection(s.inProgress, r.inProgress, s, s.colReason, (it) => e(reasonText(it, s)))}
-${listSection(s.added, r.added, s, s.colStatus, statusOf)}
+${listSection(s.added, r.added, s, s.colCreated, (it) => e(it.created))}
 ${listSection(s.remaining, r.remaining, s, s.colStatus, statusOf)}
 ${listSection(s.reopened, reopened, s, s.colStatus, statusOf)}
 ${listSection(s.droppedOrRemoved, gone, s, s.colChange, changeOf)}
 </section>`;
 }
 
+/** The notes about the selected repositories' data; '' when there are none. */
+function notes(m: ReportModel, s: ReportStrings): string {
+  if (m.warnings.length === 0) return '';
+  const li = m.warnings.map((w) => `<li>${e(w.repo)}: ${e(w.message)}</li>`).join('');
+  return `<div class="notes"><p class="notes-title">${e(s.dataNotes)}</p><ul>${li}</ul></div>`;
+}
+
 export function renderReportBody(m: ReportModel, s: ReportStrings, meta: ReportMeta): string {
   const names = m.repos.map((r) => r.name).join(', ');
+  const axis = { from: m.period.from, to: m.period.to };
   return `<div class="report">
 <header><h1>${e(s.title)}</h1>
 <p class="meta">${e(s.period)}: ${e(m.period.from)} – ${e(m.period.to)}</p>
 <p class="meta">${e(fill(s.repositories, names))}</p>
 <p class="meta">${e(fill(s.generated, meta.generated))} · ${e(fill(s.speclog, meta.version))}</p></header>
+${notes(m, s)}
 <h2>${e(s.summary)}</h2>
 ${summaryTable(m, s)}
 ${m.endIsLive ? '' : `<p class="note">${e(s.pastEndNote)}</p>`}
-<div class="curve">${curveSvg(m.total.curve, 640, 160, `${pct(m.total.start)} → ${pct(m.total.end)}`)}</div>
-${m.repos.map((r) => repoSection(r, s)).join('\n')}
+<div class="curve">${curveSvg(m.total.curve, 640, 180, `${pct(m.total.start)} → ${pct(m.total.end)}`, axis)}</div>
+${m.repos.map((r) => repoSection(r, s, axis)).join('\n')}
 <p class="footer">${e(s.footer)}</p>
 </div>`;
 }

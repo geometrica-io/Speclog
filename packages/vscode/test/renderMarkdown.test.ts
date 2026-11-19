@@ -9,12 +9,12 @@ const s: ReportStrings = {
   changedColumn: 'Reopened, dropped or removed', total: 'Total',
   repository: 'Repository', period: 'Period', start: 'Start', end: 'End', delta: 'Change (points)',
   colId: 'ID', colTitle: 'Title', colProgram: 'Program', colClosed: 'Closed', colReason: 'Reason',
-  colStatus: 'Status', colChange: 'Change', colProgress: 'Progress', changeDropped: 'Dropped', changeRemoved: 'Removed',
+  colStatus: 'Status', colChange: 'Change', colCreated: 'Created', changeDropped: 'Dropped', changeRemoved: 'Removed',
   isNew: 'New', onBranch: 'On branch {0}', newOnBranch: 'New on branch {0}', partial: 'Partial',
   progressCommit: 'Last progress {0}',
   footer: 'Counts cover main; work on branches is listed under In progress.',
   pastEndNote: 'On branch is known only for periods that end today.',
-  generated: 'Generated {0}', repositories: 'Repositories: {0}', speclog: 'Speclog {0}', showItems: '{0} items',
+  generated: 'Generated {0}', repositories: 'Repositories: {0}', speclog: 'Speclog {0}', showItems: '{0} items', dataNotes: 'Data notes',
   status: { open: 'Not started', partial: 'Partial', done: 'Done' },
 };
 const meta = { generated: '2026-11-19', version: '1.2.3' };
@@ -36,7 +36,7 @@ function repo(over: Partial<RepoReport> = {}): RepoReport {
 function model(r: RepoReport = repo(), over: Partial<ReportModel> = {}): ReportModel {
   return {
     period: { preset: 'custom', from: '2026-11-01', to: '2026-11-19' }, startDay: '2026-10-31', curveDays: ['a', 'b'],
-    endIsLive: true, repos: [r], total: { start: r.start, end: r.end, curve: r.curve }, ...over,
+    endIsLive: true, repos: [r], total: { start: r.start, end: r.end, curve: r.curve }, warnings: [], ...over,
   };
 }
 
@@ -106,5 +106,19 @@ describe('renderReportMarkdown', () => {
   it('adds the past-end note only when the end is not live', () => {
     expect(renderReportMarkdown(model(), s, meta)).not.toContain(s.pastEndNote);
     expect(renderReportMarkdown(model(repo(), { endIsLive: false }), s, meta)).toContain(s.pastEndNote);
+  });
+
+  it('Added lists the created date, empty when none', () => {
+    const md = renderReportMarkdown(model(repo({ added: [item('N1', { created: '2026-11-03' }), item('N2')] })), s, meta);
+    expect(md).toContain('### Added (2)\n\n| ID | Title | Program | Created |');
+    expect(md).toContain('| N1 | TN1 | Prog | 2026-11-03 |');
+    expect(md).toContain('| N2 | TN2 | Prog |  |');
+  });
+
+  it('shows escaped data notes under the header, none when empty', () => {
+    expect(renderReportMarkdown(model(), s, meta)).not.toContain('Data notes');
+    const md = renderReportMarkdown(model(repo(), { warnings: [{ repo: 'R_1', message: 'git <log> *boom*' }] }), s, meta);
+    expect(md).toContain('**Data notes**\n\n- R\\_1: git &lt;log&gt; \\*boom\\*\n');
+    expect(md.indexOf('Data notes')).toBeLessThan(md.indexOf('## Summary'));
   });
 });

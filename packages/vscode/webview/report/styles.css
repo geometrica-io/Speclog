@@ -104,3 +104,6 @@ summary { color: var(--vscode-textLink-foreground); }
 .curve svg line { stroke: var(--vscode-panel-border); }
 .curve svg polyline { stroke: var(--vscode-textLink-foreground); }
 .curve svg circle { fill: var(--vscode-textLink-foreground); }
+.curve svg text { fill: var(--vscode-descriptionForeground); }
+.notes { background: var(--vscode-inputValidation-warningBackground, transparent); border-left-color: var(--vscode-inputValidation-warningBorder, var(--vscode-panel-border)); }
+.notes-title { color: var(--vscode-foreground); }

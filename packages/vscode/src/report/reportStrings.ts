@@ -24,7 +24,8 @@ export interface ReportStrings {
   colReason: string;
   colStatus: string;
   colChange: string;
-  colProgress: string;
+  /** Added list: the item's created date. */
+  colCreated: string;
   changeDropped: string;
   changeRemoved: string;
   isNew: string;
@@ -45,6 +46,8 @@ export interface ReportStrings {
   speclog: string;
   /** "{0} items". */
   showItems: string;
+  /** Heading of the notes about the repositories' data (model.warnings). */
+  dataNotes: string;
   /** Status id (Status or 'onBranch') to label. */
   status: Record<string, string>;
 }

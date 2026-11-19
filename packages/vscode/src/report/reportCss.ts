@@ -1,4 +1,4 @@
-// Stylesheet of the report: light neutral theme, A4 print rules (lists print open, one repository per page).
+// Stylesheet of the report: light neutral theme, A4 print rules (lists print open; a long repository starts a page).
 export const REPORT_CSS = `
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
@@ -23,6 +23,9 @@ summary { cursor: pointer; color: #1f5fa8; font-size: 13px; }
 .curve { margin: 8px 0; }
 .curve svg { display: block; width: 100%; max-width: 640px; height: auto; }
 .repo { margin-top: 32px; }
+.notes { margin: 12px 0 0; padding: 8px 12px; border-left: 3px solid #c99a2e; background: #fdf8ec; font-size: 13px; }
+.notes-title { margin: 0 0 4px; font-weight: 600; color: #323f4b; }
+.notes ul { margin: 0; padding-left: 18px; }
 .footer { margin-top: 36px; padding-top: 10px; border-top: 1px solid #d9dee4; color: #616e7c; font-size: 12px; }
 @media print {
   @page { size: A4; margin: 15mm }
@@ -31,9 +34,10 @@ summary { cursor: pointer; color: #1f5fa8; font-size: 13px; }
   details::details-content { content-visibility: visible; display: block; }
   details > summary { list-style: none; cursor: default; color: #323f4b; font-weight: 600; font-size: 12pt }
   details > summary::-webkit-details-marker { display: none }
-  .repo { break-before: page }
-  .repo:first-of-type { break-before: auto }
-  tr, h2, h3 { break-inside: avoid; }
+  .repo.long { break-before: page }
+  .repo.long:first-of-type { break-before: auto }
+  tr, h2, h3, thead, .meta, .curve, .notes { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
   thead { display: table-header-group; }
 }
 `;
