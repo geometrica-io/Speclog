@@ -15,14 +15,14 @@ export function escapeHtml(v: string): string {
 }
 
 const e = escapeHtml;
-const fill = (t: string, ...a: string[]): string => t.replace(/\{(\d+)\}/g, (_, i: string) => a[Number(i)] ?? '');
+export const fill = (t: string, ...a: string[]): string => t.replace(/\{(\d+)\}/g, (_, i: string) => a[Number(i)] ?? '');
 
-function pct(p: Progress): string {
+export function pct(p: Progress): string {
   const v = percent(p);
   return v === null ? '—' : `${v}% (${p.done}/${p.total})`;
 }
 
-function delta(a: Progress, b: Progress): { text: string; cls: string } {
+export function delta(a: Progress, b: Progress): { text: string; cls: string } {
   const x = percent(a), y = percent(b);
   if (x === null || y === null) return { text: '—', cls: '' };
   const d = y - x;
@@ -83,7 +83,7 @@ function summaryTable(m: ReportModel, s: ReportStrings): string {
   return `<table><thead><tr>${th}</tr></thead><tbody>${rows}${total}</tbody></table>`;
 }
 
-function reasonText(it: ReportItem, s: ReportStrings): string {
+export function reasonText(it: ReportItem, s: ReportStrings): string {
   const r = it.progressReason;
   if (!r) return '';
   switch (r.kind) {
