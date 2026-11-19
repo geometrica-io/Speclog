@@ -9,7 +9,7 @@ import { BlobReader } from './git/blobReader';
 import { TreeReader } from './git/treeReader';
 import {
   BranchTip, CommitInfo, MainRef, changedFilesSince, grepFixed, hasUncommittedChanges, listOtherBranches,
-  logCommits, objectIds, resolveCommit, resolveMain, revList,
+  logCommits, objectIds, resolveCommit, resolveMain, revList, TreeBlob,
 } from './git/repo';
 import { ParseIssue, Program, RECENT_DAYS, RepoInfo, SourceFormat } from './model';
 import { dayNumber, trim } from './text';
@@ -104,20 +104,26 @@ function pathspecsOf(adapters: readonly TaskSourceAdapter[]): string[] {
 
 /**
  * Lists the adapters' task files at ref and parses them. error is the first git failure
- * (listing or reading a file), '' otherwise.
+ * (listing or reading a file), '' otherwise. listed: the files at ref already listed for (at least) the
+ * adapters' pathspecs, so they are not listed again; each adapter selects its own files from them.
  */
 export async function readProgramsAt(reader: BlobReader, trees: TreeReader, ref: string,
-  adapters: readonly TaskSourceAdapter[], cache: ParseCache): Promise<{ programs: Program[]; issues: ParseIssue[]; error: string }> {
+  adapters: readonly TaskSourceAdapter[], cache: ParseCache,
+  listed?: readonly TreeBlob[]): Promise<{ programs: Program[]; issues: ParseIssue[]; error: string }> {
   let error = '';
   const fail = (e: string) => {
     if (e && !error) error = e;
   };
-  const l = await trees.listBlobs(ref, pathspecsOf(adapters));
-  fail(l.error);
+  let files = listed;
+  if (!files) {
+    const l = await trees.listBlobs(ref, pathspecsOf(adapters));
+    fail(l.error);
+    files = l.value;
+  }
   const programs: Program[] = [];
   const issues: ParseIssue[] = [];
-  const oidOf = new Map(l.value.map((f) => [f.path, f.oid]));
-  const paths = l.value.map((f) => f.path);
+  const oidOf = new Map(files.map((f) => [f.path, f.oid]));
+  const paths = files.map((f) => f.path);
   for (const a of adapters) {
     const selected = a.select(paths);
     if (selected.length === 0) continue;
@@ -214,8 +220,8 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
   };
 
   /** Lists the adapters' files at ref and parses them; a git failure goes to the build's first error. */
-  const readAt = async (ref: string, adapters: readonly TaskSourceAdapter[]) => {
-    const r = await readProgramsAt(reader, trees, ref, adapters, cache);
+  const readAt = async (ref: string, adapters: readonly TaskSourceAdapter[], listed?: readonly TreeBlob[]) => {
+    const r = await readProgramsAt(reader, trees, ref, adapters, cache, listed);
     fail(r.error);
     return r;
   };
@@ -245,7 +251,8 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
   snap.formats = ADAPTERS.filter((a) => isPresent(a, paths)).map((a) => a.format);
   snap.hasTaskFiles = snap.formats.length > 0;
   snap.tipHash = tip;
-  const main = await readAt(tip, ADAPTERS);
+  // The listing above is every adapter's pathspecs at the tip: reused, not listed twice.
+  const main = await readAt(tip, ADAPTERS, listed.value);
   snap.programs = main.programs;
   snap.issues = main.issues;
   if (cancelled()) return snap;

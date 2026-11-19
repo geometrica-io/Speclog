@@ -50,6 +50,14 @@ function ancestorsIn(snap: RepoSnapshot, byHash: CommitIndex, hash: string): Com
   return snap.mainCommits.filter((c) => seen.has(c.hash));
 }
 
+/** Something a report should mention about a repository's data (the report is still computed). */
+export interface ReplayWarning { repo: string; repoPath: string; message: string; }
+
+export interface ReplayOptions {
+  /** Opens a repository's blob reader (tests: to count or watch readers); default: a new BlobReader. */
+  openBlobReader?: (repoPath: string, signal?: AbortSignal) => BlobReader;
+}
+
 /** Replays the live snapshots at days; one blob reader per repository, one shared parse cache. */
 export class ReplaySession {
   /** One per repository, opened lazily. A dead reader is not replaced within a session (a new session is made per report run). */
@@ -59,28 +67,38 @@ export class ReplaySession {
   private readonly indexes = new Map<RepoSnapshot, CommitIndex>();
 
   constructor(private readonly snapshots: readonly RepoSnapshot[], private readonly mode: UnverifiedMode,
-    private readonly signal?: AbortSignal) {}
+    private readonly signal?: AbortSignal, private readonly opts: ReplayOptions = {}) {}
 
   private readerFor(path: string): { reader: BlobReader; trees: TreeReader } {
     let r = this.readers.get(path);
     if (!r) {
-      const reader = new BlobReader(path, this.signal);
+      const reader = this.opts.openBlobReader ? this.opts.openBlobReader(path, this.signal) : new BlobReader(path, this.signal);
       r = { reader, trees: new TreeReader(reader) };
       this.readers.set(path, r);
     }
     return r;
   }
 
-  async at(day: string): Promise<{ workspace: Workspace; error: string }> {
+  /**
+   * The board at the end of day. error: a replay read failed ("<repository>: <git error>"), or "cancelled".
+   * A live snapshot's own error (the engine kept its last good data) does not fail the replay: the data present
+   * is replayed and the error comes back as a warning, as does a main tip missing from main's history.
+   */
+  async at(day: string): Promise<{ workspace: Workspace; error: string; warnings: ReplayWarning[] }> {
     let error = '';
+    const warnings: ReplayWarning[] = [];
+    const warn = (live: RepoSnapshot, message: string) => warnings.push({ repo: live.repo.name, repoPath: live.repo.path, message });
     const replayed: RepoSnapshot[] = [];
     for (const live of this.snapshots) {
       if (this.signal?.aborted) {
-        return { workspace: resolveAll(this.snapshots.map((s) => emptySnapshot(s.repo)), this.mode), error: 'cancelled' };
+        return { workspace: resolveAll(this.snapshots.map((s) => emptySnapshot(s.repo)), this.mode), error: 'cancelled', warnings: [] };
       }
-      if (live.error && !error) error = live.error;
+      if (live.error) warn(live, live.error);
       let idx = this.indexes.get(live);
       if (!idx) this.indexes.set(live, (idx = indexOf(live)));
+      if (live.tipHash !== '' && !idx.has(live.tipHash)) {
+        warn(live, `the main branch tip ${live.tipHash.slice(0, 7)} is not in its commit history; its items are left out`);
+      }
       const c = commitAtDayIn(idx, live.tipHash, day);
       if (c === '') {
         replayed.push(emptySnapshot(live.repo));
@@ -88,7 +106,7 @@ export class ReplaySession {
       }
       const { reader, trees } = this.readerFor(live.repo.path);
       const r = await readProgramsAt(reader, trees, c, ADAPTERS, this.cache);
-      if (r.error && !error) error = r.error;
+      if (r.error && !error) error = `${live.repo.name}: ${r.error}`;
       replayed.push({
         ...emptySnapshot(live.repo),
         main: live.main, tipHash: c, programs: r.programs, mainCommits: ancestorsIn(live, idx, c),
@@ -98,7 +116,7 @@ export class ReplaySession {
       });
     }
     if (this.signal?.aborted) error = 'cancelled';
-    return { workspace: resolveAll(replayed, this.mode), error };
+    return { workspace: resolveAll(replayed, this.mode), error, warnings };
   }
 
   async close(): Promise<void> {

@@ -3,7 +3,8 @@ import { buildSnapshot } from '../src/snapshot';
 import type { RepoInfo } from '../src/model';
 import { findItem } from '../src/status';
 import { ancestorsOf, commitAtDay, ReplaySession } from '../src/replay';
-import { TestRepo } from './helpers/testRepo';
+import { BlobReader } from '../src/git/blobReader';
+import { TestRepo, makeTempDir, removeTree } from './helpers/testRepo';
 
 const T = 120000;
 const TODAY = '2026-06-01';
@@ -122,13 +123,69 @@ describe('replay', () => {
     }
   }, T);
 
-  it('carries a live snapshot error', async () => {
+  it('a live snapshot error is a warning naming the repository; the data present is replayed', async () => {
     const a = await repo('a');
     await a.commit('init', { 'docs/tasks/a.md': file(item('A1')) }, '2026-03-01T12:00:00');
     const live = { ...(await snapOf(a, 'a')), error: 'git log: boom' };
     const rs = new ReplaySession([live], 'unverified');
     try {
-      expect((await rs.at('2026-03-02')).error).toBe('git log: boom');
+      const r = await rs.at('2026-03-02');
+      expect(r.error).toBe('');
+      expect(r.warnings).toEqual([{ repo: 'a', repoPath: a.dir, message: 'git log: boom' }]);
+      expect(findItem(r.workspace, 'a', 'A1')).toBeDefined();
+    } finally {
+      await rs.close();
+    }
+  }, T);
+
+  it('a replay read failure is an error prefixed with the repository name', async () => {
+    const a = await repo('a');
+    await a.commit('init', { 'docs/tasks/a.md': file(item('A1')) }, '2026-03-01T12:00:00');
+    const live = await snapOf(a, 'a');
+    let closed = 0;
+    // A reader on a folder that is not a repository: every read fails.
+    const bogus = makeTempDir('notrepo');
+    cleanups.push({ cleanup: () => removeTree(bogus) });
+    const rs = new ReplaySession([live], 'unverified', undefined, {
+      openBlobReader: (_p, signal) => {
+        const r = new BlobReader(bogus, signal);
+        const close = r.close.bind(r);
+        r.close = async () => { closed++; await close(); };
+        return r;
+      },
+    });
+    try {
+      const r = await rs.at('2026-03-02');
+      expect(r.error).toMatch(/^a: ./);
+    } finally {
+      await rs.close();
+    }
+    expect(closed).toBe(1);
+  }, T);
+
+  it('a tip missing from the main history is a warning and its items show as absent', async () => {
+    const a = await repo('a');
+    await a.commit('init', { 'docs/tasks/a.md': file(item('A1')) }, '2026-03-01T12:00:00');
+    const live = { ...(await snapOf(a, 'a')), mainCommits: [] };
+    const rs = new ReplaySession([live], 'unverified');
+    try {
+      const r = await rs.at('2026-03-02');
+      expect(r.error).toBe('');
+      expect(r.warnings).toHaveLength(1);
+      expect(r.warnings[0].repo).toBe('a');
+      expect(r.warnings[0].message).toContain(live.tipHash.slice(0, 7));
+      expect(findItem(r.workspace, 'a', 'A1')).toBeUndefined();
+    } finally {
+      await rs.close();
+    }
+  }, T);
+
+  it('a healthy repository has no warnings', async () => {
+    const a = await repo('a');
+    await a.commit('init', { 'docs/tasks/a.md': file(item('A1')) }, '2026-03-01T12:00:00');
+    const rs = new ReplaySession([await snapOf(a, 'a')], 'unverified');
+    try {
+      expect((await rs.at('2026-03-02')).warnings).toEqual([]);
     } finally {
       await rs.close();
     }
@@ -141,12 +198,8 @@ describe('replay', () => {
     await r.commit('close A\n\nTask: A', { 'y.txt': '1' }, '2026-03-02T12:00:00');
     await r.git(['checkout', 'main']);
     await r.commit('main work', { 'x.txt': '1' }, '2026-03-03T12:00:00');
-    process.env.GIT_COMMITTER_DATE = '2026-03-04T12:00:00';
-    try {
-      await r.merge('side');
-    } finally {
-      delete process.env.GIT_COMMITTER_DATE;
-    }
+    const env = { GIT_AUTHOR_DATE: '2026-03-04T12:00:00', GIT_COMMITTER_DATE: '2026-03-04T12:00:00' };
+    expect((await r.git(['merge', '-q', '--no-ff', '-m', 'Merge side', 'side'], { env })).code).toBe(0);
     const rs = new ReplaySession([await snapOf(r)], 'unverified');
     try {
       expect(findItem((await rs.at('2026-03-03')).workspace, 'repo', 'A')!.status).toBe('open');
