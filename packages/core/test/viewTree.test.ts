@@ -21,6 +21,7 @@ function repo(name: string, programs: Program[], path = `/r/${name}`, key = path
   return {
     repo: { name, owner: '', path, origin: '', key },
     main: { name: 'main', tipRef: 'refs/heads/main', reachRefs: ['refs/heads/main'] },
+    tipHash: '',
     formats: ['docsTasks'], hasTaskFiles: true, programs, issues: [], mainCommits: [], branches: [], evidence: [],
     sinceCommit: '', hasSinceFile: false, programsAtSince: [], commitsAfterSince: new Set(),
     trustCommit: '', programsAtTrust: [], uncommittedTaskChanges: false, changedFiles: new Map(), error: '',
