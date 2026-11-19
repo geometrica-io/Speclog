@@ -61,6 +61,7 @@ function snap(over: Partial<RepoSnapshot>): RepoSnapshot {
   return {
     repo: { name: '', owner: '', path: '', origin: '', key: '' },
     main: { name: '', tipRef: '', reachRefs: [] },
+    tipHash: '',
     formats: [], hasTaskFiles: false, programs: [], issues: [], mainCommits: [], branches: [], evidence: [],
     sinceCommit: '', hasSinceFile: false, programsAtSince: [], commitsAfterSince: new Set(),
     trustCommit: '', programsAtTrust: [], uncommittedTaskChanges: false, changedFiles: new Map(), error: '',

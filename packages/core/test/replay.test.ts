@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { buildSnapshot, emptySnapshot, RepoSnapshot } from '../src/snapshot';
+import { buildSnapshot } from '../src/snapshot';
 import type { RepoInfo } from '../src/model';
 import { findItem } from '../src/status';
 import { ancestorsOf, commitAtDay, ReplaySession } from '../src/replay';
