@@ -1,9 +1,10 @@
-// Command registrations: open / refresh, the commit-msg hook installer, the per-repository trust cutoff and
+// Command registrations: open / refresh, the report tab, the commit-msg hook installer, the per-repository trust cutoff and
 // Send to agent.
 import * as vscode from 'vscode';
 import { SendResult, copyAgentPrompt, sendToAgent } from './agent';
 import { HookError, hooksPathOf, installHook, resolveCommit } from './hook';
 import type { SpeclogHost } from './host';
+import { ReportPanel } from './reportPanel';
 
 type RepoInfo = ReturnType<SpeclogHost['repoInfos']>[number];
 
@@ -105,6 +106,7 @@ export function registerCommands(ctx: vscode.ExtensionContext, host: SpeclogHost
   return [
     vscode.commands.registerCommand('speclog.open', () => host.open()),
     vscode.commands.registerCommand('speclog.refresh', () => host.refresh()),
+    vscode.commands.registerCommand('speclog.openReport', () => ReportPanel.show(host, ctx)),
     vscode.commands.registerCommand('speclog.installHook', (key?: unknown) => installHookCommand(host, key)),
     vscode.commands.registerCommand('speclog.trustTaskFiles', (key?: unknown) => trustCommand(host, key)),
     vscode.commands.registerCommand('speclog.untrustTaskFiles', (key?: unknown) => untrustCommand(host, key)),

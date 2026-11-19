@@ -122,6 +122,16 @@ export async function run(): Promise<void> {
   assert.ok(fs.readFileSync(hook, 'utf8').includes('Speclog commit-msg hook'), 'hook content');
   console.log('ok - speclog.installHook installs the hook');
 
+  await vscode.commands.executeCommand('speclog.openReport');
+  await waitFor('a Speclog Report webview tab', () => vscode.window.tabGroups.all.flatMap((g) => g.tabs)
+    .some((t) => t.label === 'Speclog Report' && t.input instanceof vscode.TabInputWebview));
+  await waitFor('a report of both sample repositories', () => api.lastReportRepoCount() === 2);
+  console.log('ok - speclog.openReport opens the report tab and computes both repositories');
+  // The report tab covers the board, whose hidden webview stops taking messages: close it, show the board.
+  const reportTabs = vscode.window.tabGroups.all.flatMap((g) => g.tabs).filter((t) => t.label === 'Speclog Report');
+  await vscode.window.tabGroups.close(reportTabs);
+  await vscode.commands.executeCommand('speclog.open');
+
   await agentTests(api);
 }
 

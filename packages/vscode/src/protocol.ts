@@ -191,7 +191,7 @@ export type WebviewToHost =
   | { type: 'layout'; attentionOpen: boolean; attentionHeight: number; treeFraction: number }
   /** Send the item with this tree key to an agent; the host re-resolves it. */
   | { type: 'sendToAgent'; key: string }
-  | { type: 'command'; id: 'refresh' | 'trustTaskFiles' | 'installHook'; repoKey?: string };
+  | { type: 'command'; id: 'refresh' | 'trustTaskFiles' | 'installHook' | 'openReport'; repoKey?: string };
 
 /** Every user-visible webview text; the host fills it through vscode.l10n.t. "{0}" are placeholders. */
 export const STRING_KEYS = [
@@ -208,7 +208,7 @@ export const STRING_KEYS = [
   'row.id', 'row.title', 'row.status', 'row.size', 'row.priority', 'row.area', 'row.created', 'row.lastActivity', 'row.note',
   'row.depends', 'row.spec', 'row.taskFile', 'row.inFile', 'row.branches', 'row.commits', 'row.completion',
   'row.expression', 'row.result', 'row.name', 'row.items', 'row.done', 'row.progress', 'row.item',
-  'agent.send',
+  'agent.send', 'openReport',
   'note.branchOnly', 'note.history', 'note.trusted', 'note.flagged', 'commits.none', 'commit.closes', 'commit.progress',
   'commit.copy', 'dep.notFound', 'spec.missing', 'spec.outside', 'evidence.found', 'evidence.notFound',
   'evidence.unchecked', 'evidence.conflict', 'history',
