@@ -4,8 +4,10 @@
 import { normalizeId } from './adapters';
 import type { Status } from './model';
 import type { Period } from './reportPeriod';
-import { startDay } from './reportPeriod';
-import type { ResolvedItem, Workspace } from './status';
+import { curveDays, startDay } from './reportPeriod';
+import { ReplaySession } from './replay';
+import type { RepoSnapshot } from './snapshot';
+import type { ResolvedItem, UnverifiedMode, Workspace } from './status';
 
 export interface Progress { done: number; total: number; }
 
@@ -193,4 +195,41 @@ export function buildReport(input: ReportInput): ReportModel {
       curve: input.curve.map((_, i) => sum((r) => r.curve[i])),
     },
   };
+}
+
+export interface ComputeReportOptions {
+  snapshots: readonly RepoSnapshot[]; live: Workspace; today: string; period: Period; mode: UnverifiedMode;
+  selectedRepoPaths: readonly string[]; signal?: AbortSignal;
+  onProgress?: (doneSteps: number, totalSteps: number) => void;
+}
+
+/** Replays each distinct day once (the live workspace stands in for today) and builds the report. */
+export async function computeReport(o: ComputeReportOptions): Promise<{ model: ReportModel | null; error: string }> {
+  const days = curveDays(o.period);
+  const endIsLive = o.period.to === o.today;
+  const toReplay = days.filter((d) => !(endIsLive && d === o.today));
+  const total = toReplay.length;
+  o.onProgress?.(0, total);
+  const session = new ReplaySession(o.snapshots, o.mode, o.signal);
+  try {
+    const byDay = new Map<string, Workspace>();
+    for (const d of toReplay) {
+      if (o.signal?.aborted) return { model: null, error: 'cancelled' };
+      const r = await session.at(d);
+      if (r.error) return { model: null, error: r.error };
+      byDay.set(d, r.workspace);
+      o.onProgress?.(byDay.size, total);
+    }
+    if (o.signal?.aborted) return { model: null, error: 'cancelled' };
+    const wsOf = (d: string): Workspace => byDay.get(d) ?? o.live;
+    return {
+      model: buildReport({
+        period: o.period, start: wsOf(days[0]), end: wsOf(days[days.length - 1]),
+        endIsLive, curve: days.map((day) => ({ day, workspace: wsOf(day) })), selectedRepoPaths: o.selectedRepoPaths,
+      }),
+      error: '',
+    };
+  } finally {
+    await session.close();
+  }
 }
