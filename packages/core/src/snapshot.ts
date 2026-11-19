@@ -8,7 +8,7 @@ import { mapLimit } from './discovery';
 import { BlobReader } from './git/blobReader';
 import { TreeReader } from './git/treeReader';
 import {
-  BranchTip, CommitInfo, MainRef, TreeBlob, changedFilesSince, grepFixed, hasUncommittedChanges, listOtherBranches,
+  BranchTip, CommitInfo, MainRef, changedFilesSince, grepFixed, hasUncommittedChanges, listOtherBranches,
   logCommits, objectIds, resolveCommit, resolveMain, revList,
 } from './git/repo';
 import { ParseIssue, Program, RECENT_DAYS, RepoInfo, SourceFormat } from './model';
@@ -26,6 +26,8 @@ export interface EvidenceResult { id: string; found: boolean; expectPresent: boo
 export interface RepoSnapshot {
   repo: RepoInfo;
   main: MainRef;
+  /** Full hash of main's tip the programs were read from; '' when there is no main. */
+  tipHash: string;
   /** Formats with at least one task file on the main tip, in ADAPTERS order. */
   formats: SourceFormat[];
   hasTaskFiles: boolean;
@@ -89,7 +91,7 @@ const BLOB_READ_CONCURRENCY = 32;
 /** A snapshot with no data: the repository only. */
 export function emptySnapshot(repo: RepoInfo): RepoSnapshot {
   return {
-    repo, main: { name: '', tipRef: '', reachRefs: [] }, formats: [], hasTaskFiles: false, programs: [], issues: [],
+    repo, main: { name: '', tipRef: '', reachRefs: [] }, tipHash: '', formats: [], hasTaskFiles: false, programs: [], issues: [],
     mainCommits: [], branches: [], evidence: [], sinceCommit: '', hasSinceFile: false, programsAtSince: [],
     commitsAfterSince: new Set(), trustCommit: '', programsAtTrust: [], uncommittedTaskChanges: false,
     changedFiles: new Map(), error: '',
@@ -98,6 +100,40 @@ export function emptySnapshot(repo: RepoInfo): RepoSnapshot {
 
 function pathspecsOf(adapters: readonly TaskSourceAdapter[]): string[] {
   return [...new Set(adapters.flatMap((a) => a.pathspecs))];
+}
+
+/**
+ * Lists the adapters' task files at ref and parses them. error is the first git failure
+ * (listing or reading a file), '' otherwise.
+ */
+export async function readProgramsAt(reader: BlobReader, trees: TreeReader, ref: string,
+  adapters: readonly TaskSourceAdapter[], cache: ParseCache): Promise<{ programs: Program[]; issues: ParseIssue[]; error: string }> {
+  let error = '';
+  const fail = (e: string) => {
+    if (e && !error) error = e;
+  };
+  const l = await trees.listBlobs(ref, pathspecsOf(adapters));
+  fail(l.error);
+  const programs: Program[] = [];
+  const issues: ParseIssue[] = [];
+  const oidOf = new Map(l.value.map((f) => [f.path, f.oid]));
+  const paths = l.value.map((f) => f.path);
+  for (const a of adapters) {
+    const selected = a.select(paths);
+    if (selected.length === 0) continue;
+    const read = await mapLimit(selected, BLOB_READ_CONCURRENCY, async (path): Promise<SourceFile | null> => {
+      // By object id: the request never holds the path (any characters, any length).
+      const oid = oidOf.get(path)!;
+      const b = await reader.read(oid);
+      if (b.error) fail(b.error);
+      else if (b.value === null) fail(`could not read ${path} on ${ref}`);
+      return b.value === null ? null : { path, text: b.value.text, oid };
+    });
+    const r = a.parse(read.filter((f): f is SourceFile => f !== null), cache);
+    programs.push(...r.programs);
+    issues.push(...r.issues);
+  }
+  return { programs, issues, error };
 }
 
 /** A format is present when it selects a file; docs/tasks also when it holds any file (e.g. only .since). */
@@ -177,34 +213,11 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
     return snap;
   };
 
-  /** Parses the files of adapters among files (listed at ref); a file that cannot be read sets the error. */
-  const readPrograms = async (ref: string, files: TreeBlob[], adapters: readonly TaskSourceAdapter[]) => {
-    const programs: Program[] = [];
-    const issues: ParseIssue[] = [];
-    const oidOf = new Map(files.map((f) => [f.path, f.oid]));
-    const paths = files.map((f) => f.path);
-    for (const a of adapters) {
-      const selected = a.select(paths);
-      if (selected.length === 0) continue;
-      const read = await mapLimit(selected, BLOB_READ_CONCURRENCY, async (path): Promise<SourceFile | null> => {
-        // By object id: the request never holds the path (any characters, any length).
-        const oid = oidOf.get(path)!;
-        const b = await reader.read(oid);
-        if (b.error) fail(b.error);
-        else if (b.value === null) fail(`could not read ${path} on ${ref}`);
-        return b.value === null ? null : { path, text: b.value.text, oid };
-      });
-      const r = a.parse(read.filter((f): f is SourceFile => f !== null), cache);
-      programs.push(...r.programs);
-      issues.push(...r.issues);
-    }
-    return { programs, issues };
-  };
-  /** Lists the adapters' files at ref and parses them. */
+  /** Lists the adapters' files at ref and parses them; a git failure goes to the build's first error. */
   const readAt = async (ref: string, adapters: readonly TaskSourceAdapter[]) => {
-    const l = await trees.listBlobs(ref, pathspecsOf(adapters));
-    fail(l.error);
-    return readPrograms(ref, l.value, adapters);
+    const r = await readProgramsAt(reader, trees, ref, adapters, cache);
+    fail(r.error);
+    return r;
   };
 
   const m = await resolveMain(repo.path, signal);
@@ -231,7 +244,8 @@ async function build(repo: RepoInfo, o: SnapshotOptions, reader: BlobReader, cac
   const paths = listed.value.map((f) => f.path);
   snap.formats = ADAPTERS.filter((a) => isPresent(a, paths)).map((a) => a.format);
   snap.hasTaskFiles = snap.formats.length > 0;
-  const main = await readPrograms(tip, listed.value, ADAPTERS);
+  snap.tipHash = tip;
+  const main = await readAt(tip, ADAPTERS);
   snap.programs = main.programs;
   snap.issues = main.issues;
   if (cancelled()) return snap;

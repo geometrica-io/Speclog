@@ -203,6 +203,16 @@ describe('snapshot', () => {
     expect(s.programs).toEqual([]);
   }, T);
 
+  it('records the main tip hash', async () => {
+    const r = await repo();
+    await r.commit('init', { 'docs/tasks/a.md': file(item('A1')) });
+    await r.commit('more', { 'docs/tasks/a.md': file(item('A1') + item('A2')) });
+    const s = await buildSnapshot(info(r), { today: today() });
+    expect(s.tipHash).toBe(await r.head());
+    const e = await repo();
+    expect((await buildSnapshot(info(e), { today: today() })).tipHash).toBe('');
+  }, T);
+
   it('evidence evaluated on main tip', async () => {
     const r = await repo();
     const ev = 'evidence: present "SolveTargetForce" in src/*.cpp';
