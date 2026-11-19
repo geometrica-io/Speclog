@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 import { EngineState, PeriodPreset, ReportModel, computeReport, periodOf } from '@speclog/core';
 import type { Period } from '@speclog/core';
 import type { SpeclogHost } from './host';
-import { reportFileName } from './report/fileName';
+import { defaultSaveDir, reportFileName } from './report/fileName';
 import { renderReportMarkdown } from './report/renderMarkdown';
 import { ReportGate, localDay, localStamp, repoChoices, repoPathsOf, repoSignature } from './report/panelPure';
 import { REPORT_CSS, renderReportBody, renderReportDocument } from './report/renderHtml';
@@ -170,10 +170,14 @@ export class ReportPanel implements vscode.Disposable {
     if (format === 'pdf') {
       // Opened in the browser, where it is printed or saved as PDF; every list printed open.
       const html = renderReportDocument(model, strings, this.meta(), { expandAll: true });
-      const name = reportFileName(model.period, 'html').replace(/.html$/, `-${crypto.randomBytes(6).toString('hex')}.html`);
+      // Left for the browser to read; the OS temp cleanup removes it.
+      const name = reportFileName(model.period, 'html', crypto.randomBytes(6).toString('hex'));
       const file = vscode.Uri.file(path.join(os.tmpdir(), name));
       await vscode.workspace.fs.writeFile(file, bytes(html));
-      await vscode.env.openExternal(file);
+      if (!(await vscode.env.openExternal(file))) {
+        void vscode.window.showErrorMessage(vscode.l10n.t('The browser did not open the report. Open this file by hand: {0}', file.fsPath));
+        return;
+      }
       void vscode.window.showInformationMessage(vscode.l10n.t('The report opened in your browser. Print it or save it as PDF there.'));
       return;
     }
@@ -181,7 +185,7 @@ export class ReportPanel implements vscode.Disposable {
     const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
     const def = reportFileName(model.period, format);
     const target = await vscode.window.showSaveDialog({
-      defaultUri: folder ? vscode.Uri.joinPath(folder, def) : vscode.Uri.file(path.join(os.homedir(), def)),
+      defaultUri: vscode.Uri.file(path.join(defaultSaveDir(folder?.fsPath, os.homedir()), def)),
       filters: format === 'html' ? { HTML: ['html'] } : { Markdown: ['md'] },
     });
     if (!target) return;
@@ -190,7 +194,9 @@ export class ReportPanel implements vscode.Disposable {
     const choice = await vscode.window.showInformationMessage(vscode.l10n.t('Report saved to {0}.', target.fsPath), open);
     if (choice !== open) return;
     if (format === 'md') await vscode.window.showTextDocument(target);
-    else await vscode.env.openExternal(target);
+    else if (!(await vscode.env.openExternal(target))) {
+      void vscode.window.showErrorMessage(vscode.l10n.t('The browser did not open the report. Open this file by hand: {0}', target.fsPath));
+    }
   }
 
   private postBusy(done: number, total: number): void {

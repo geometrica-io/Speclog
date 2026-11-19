@@ -235,5 +235,6 @@
   "Open": "Open",
   "Report saved to {0}.": "Report saved to {0}.",
   "The report opened in your browser. Print it or save it as PDF there.": "The report opened in your browser. Print it or save it as PDF there.",
-  "Speclog: the report could not be exported: {0}": "Speclog: the report could not be exported: {0}"
+  "Speclog: the report could not be exported: {0}": "Speclog: the report could not be exported: {0}",
+  "The browser did not open the report. Open this file by hand: {0}": "The browser did not open the report. Open this file by hand: {0}"
 }
