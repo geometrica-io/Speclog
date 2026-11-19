@@ -211,7 +211,7 @@ export function reportStrings(): ReportStrings {
     colReason: vscode.l10n.t('Reason'),
     colStatus: vscode.l10n.t('Status'),
     colChange: vscode.l10n.t('Change'),
-    colProgress: vscode.l10n.t('Progress'),
+    colCreated: vscode.l10n.t('Created'),
     changeDropped: vscode.l10n.t('Dropped'),
     changeRemoved: vscode.l10n.t('Removed'),
     isNew: vscode.l10n.t('New'),
@@ -225,6 +225,7 @@ export function reportStrings(): ReportStrings {
     repositories: vscode.l10n.t('Repositories: {0}'),
     speclog: vscode.l10n.t('Speclog {0}'),
     showItems: vscode.l10n.t('{0} items'),
+    dataNotes: vscode.l10n.t('Data notes'),
     status: {
       open: vscode.l10n.t('Not started'),
       partial: vscode.l10n.t('Partial'),

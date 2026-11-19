@@ -9,12 +9,12 @@ const s: ReportStrings = {
   changedColumn: 'Reopened, dropped or removed', total: 'Total',
   repository: 'Repository', period: 'Period', start: 'Start', end: 'End', delta: 'Change (points)',
   colId: 'ID', colTitle: 'Title', colProgram: 'Program', colClosed: 'Closed', colReason: 'Reason',
-  colStatus: 'Status', colChange: 'Change', colProgress: 'Progress', changeDropped: 'Dropped', changeRemoved: 'Removed',
+  colStatus: 'Status', colChange: 'Change', colCreated: 'Created', changeDropped: 'Dropped', changeRemoved: 'Removed',
   isNew: 'New', onBranch: 'On branch {0}', newOnBranch: 'New on branch {0}', partial: 'Partial',
   progressCommit: 'Last progress {0}',
   footer: 'Counts cover main; work on branches is listed under In progress.',
   pastEndNote: 'On branch is known only for periods that end today.',
-  generated: 'Generated {0}', repositories: 'Repositories: {0}', speclog: 'Speclog {0}', showItems: '{0} items',
+  generated: 'Generated {0}', repositories: 'Repositories: {0}', speclog: 'Speclog {0}', showItems: '{0} items', dataNotes: 'Data notes',
   status: { open: 'Not started', partial: 'Partial', done: 'Done' },
 };
 const meta = { generated: '2026-11-19', version: '1.2.3' };
@@ -36,7 +36,7 @@ function repo(over: Partial<RepoReport> = {}): RepoReport {
 function model(r: RepoReport = repo(), over: Partial<ReportModel> = {}): ReportModel {
   return {
     period: { preset: 'custom', from: '2026-11-01', to: '2026-11-19' }, startDay: '2026-10-31', curveDays: ['a', 'b'],
-    endIsLive: true, repos: [r], total: { start: r.start, end: r.end, curve: r.curve }, ...over,
+    endIsLive: true, repos: [r], total: { start: r.start, end: r.end, curve: r.curve }, warnings: [], ...over,
   };
 }
 
@@ -119,5 +119,40 @@ describe('renderReport details', () => {
   it('curve svg carries an accessible label', () => {
     const html = renderReportBody(model(), s, meta);
     expect(html).toContain('aria-label="74% (391/528) → 78% (412/530)"');
+  });
+  it('Added lists the created date, empty when none', () => {
+    const html = renderReportBody(model(repo({ added: [item('N1', { created: '2026-11-03' }), item('N2')] })), s, meta);
+    const added = html.slice(html.indexOf('<h3>Added'));
+    expect(added).toContain('<th>Created</th>');
+    expect(added).not.toContain('<th>Status</th>');
+    expect(added).toContain('<td>2026-11-03</td>');
+    expect(added).toMatch(/TN2<\/td><td>Prog<\/td><td><\/td>/);
+  });
+  it('shows escaped data notes under the header, none when empty', () => {
+    expect(renderReportBody(model(), s, meta)).not.toContain('Data notes');
+    const html = renderReportBody(model(repo(), { warnings: [{ repo: 'R<1>', message: 'git log: <boom> & co' }] }), s, meta);
+    expect(html).toContain('Data notes');
+    expect(html).toContain('<li>R&lt;1&gt;: git log: &lt;boom&gt; &amp; co</li>');
+    expect(html.indexOf('Data notes')).toBeLessThan(html.indexOf('<h2>Summary'));
+  });
+  it('labels the curve axes with the period and 0 % / 100 %', () => {
+    const svg = curveSvg([{ done: 0, total: 10 }, { done: 5, total: 10 }], 640, 180, '', { from: '2026-11-01', to: '<x>' });
+    expect(svg).toContain('>0%</text>');
+    expect(svg).toContain('>100%</text>');
+    expect(svg).toContain('>2026-11-01</text>');
+    expect(svg).toContain('>&lt;x&gt;</text>');
+    const html = renderReportBody(model(), s, meta);
+    expect(html).toContain('>2026-11-01</text>');
+    expect(html).toContain('>2026-11-19</text>');
+  });
+  it('marks a repository with more than 40 list rows long (print page break), not a shorter one', () => {
+    const many = (n: number): ReportItem[] => Array.from({ length: n }, (_, i) => item('I' + i));
+    expect(renderReportBody(model(repo({ remaining: many(30), finished: many(11) })), s, meta)).toContain('<section class="repo long">');
+    const short = renderReportBody(model(repo({ remaining: many(40) })), s, meta);
+    expect(short).toContain('<section class="repo">');
+    expect(short).not.toContain('repo long');
+    const css = renderReportDocument(model(), s, meta);
+    expect(css).toContain('.repo.long { break-before: page }');
+    expect(css).not.toMatch(/\.repo \{ break-before: page \}/);
   });
 });

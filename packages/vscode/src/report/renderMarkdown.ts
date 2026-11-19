@@ -61,7 +61,7 @@ function repoSection(r: RepoReport, s: ReportStrings): string {
     programTable(r.programs, s),
     listSection(s.finished, r.finished, s, s.colClosed, closedOf),
     listSection(s.inProgress, r.inProgress, s, s.colReason, (it) => reasonText(it, s)),
-    listSection(s.added, r.added, s, s.colStatus, statusOf),
+    listSection(s.added, r.added, s, s.colCreated, (it) => it.created),
     listSection(s.remaining, r.remaining, s, s.colStatus, statusOf),
     listSection(s.reopened, reopened, s, s.colStatus, statusOf),
     listSection(s.droppedOrRemoved, gone, s, s.colChange, changeOf),
@@ -73,6 +73,7 @@ export function renderReportMarkdown(m: ReportModel, s: ReportStrings, meta: Rep
   const parts = [
     `# ${inline(s.title)}\n\n${s.period}: ${m.period.from} – ${m.period.to}  \n${fill(s.repositories, names)}  \n`
       + `${fill(s.generated, meta.generated)} · ${fill(s.speclog, meta.version)}\n`,
+    ...(m.warnings.length === 0 ? [] : [`**${inline(s.dataNotes)}**\n\n${m.warnings.map((w) => `- ${inline(w.repo)}: ${inline(w.message)}`).join('\n')}\n`]),
     `## ${inline(s.summary)}\n\n${summaryTable(m, s)}\n`,
     ...(m.endIsLive ? [] : [`*${s.pastEndNote}*\n`]),
     `${pct(m.total.start)} → ${pct(m.total.end)}\n`,
