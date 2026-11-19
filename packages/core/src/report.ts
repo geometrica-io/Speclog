@@ -89,7 +89,9 @@ function toLine(r: ResolvedItem, isNew: boolean): Line {
 
 function setClosing(r: ResolvedItem, l: Line): void {
   l.closedDate = r.doneDate;
-  const c = r.commits.find((x) => x.closes && x.date === r.doneDate);
+  // Same-day order across repositories is not guaranteed, so prefer the item's own repository.
+  const same = r.commits.filter((x) => x.closes && x.date === r.doneDate);
+  const c = same.find((x) => x.repo === r.repo) ?? same[0];
   if (c) l.closedCommit = { hash: c.hash, subject: c.subject };
 }
 
@@ -132,14 +134,16 @@ function repoReport(path: string, input: ReportInput): RepoReport {
   const remaining: Line[] = [];
   const changed: Line[] = [];
 
-  // Every end item is in exactly one of Finished / In progress / Remaining / Changed;
+  // Every end item that is not Done at both ends and not Dropped at both ends is in exactly one of
+  // Finished / In progress / Remaining / Changed (Done-at-both and Dropped-at-both items are in no list).
   // Added also lists the items that are new (they appear in their state list too).
   for (const r of endMain) {
     const before = startBy.get(keyOf(r));
     const l = toLine(r, !before);
     if (!before && r.status !== 'dropped') added.push({ ...l });
     if (r.status === 'dropped') {
-      if (before && before.status !== 'dropped') changed.push({ ...l, change: 'dropped' });
+      // Created and dropped inside the period counts too (isNew); dropped at both ends does not.
+      if (before?.status !== 'dropped') changed.push({ ...l, change: 'dropped' });
     } else if (before?.status === 'done' && r.status !== 'done') {
       changed.push({ ...l, change: 'reopened' });
     } else if (r.status === 'done') {
@@ -156,11 +160,11 @@ function repoReport(path: string, input: ReportInput): RepoReport {
   if (endIsLive) {
     for (const r of end.items) {
       if (r.repoPath !== path || !r.branchOnly || r.status === 'dropped') continue;
-      inProgress.push({ ...toLine(r, true), progressReason: reasonOf(r, period.from, period.to, true) });
+      inProgress.push({ ...toLine(r, false), progressReason: reasonOf(r, period.from, period.to, true) });
     }
   }
   for (const r of startMain) {
-    if (!endKeys.has(keyOf(r))) changed.push({ ...toLine(r, false), change: 'removed' });
+    if (r.status !== 'dropped' && !endKeys.has(keyOf(r))) changed.push({ ...toLine(r, false), change: 'removed' });
   }
   for (const list of [finished, inProgress, added, remaining, changed]) list.sort(byPlace);
 
