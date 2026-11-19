@@ -9,6 +9,8 @@ export interface ReportStrings {
   remaining: string;
   reopened: string;
   droppedOrRemoved: string;
+  /** Summary column: one count of reopened, dropped and removed items. */
+  changedColumn: string;
   total: string;
   repository: string;
   period: string;
@@ -31,7 +33,7 @@ export interface ReportStrings {
   /** "New on branch {0}". */
   newOnBranch: string;
   partial: string;
-  /** "Progress commit {0}" (the commit's date). */
+  /** "Last progress {0}" (the date of the last progress). */
   progressCommit: string;
   footer: string;
   pastEndNote: string;

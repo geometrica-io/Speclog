@@ -5,12 +5,13 @@ import type { ReportStrings } from '../src/report/reportStrings';
 
 const s: ReportStrings = {
   title: 'Speclog report', summary: 'Summary', finished: 'Finished', inProgress: 'In progress', added: 'Added',
-  remaining: 'Remaining', reopened: 'Reopened', droppedOrRemoved: 'Dropped or removed', total: 'Total',
+  remaining: 'Remaining', reopened: 'Reopened', droppedOrRemoved: 'Dropped or removed',
+  changedColumn: 'Reopened, dropped or removed', total: 'Total',
   repository: 'Repository', period: 'Period', start: 'Start', end: 'End', delta: 'Change (points)',
   colId: 'ID', colTitle: 'Title', colProgram: 'Program', colClosed: 'Closed', colReason: 'Reason',
   colStatus: 'Status', colChange: 'Change', colProgress: 'Progress', changeDropped: 'Dropped', changeRemoved: 'Removed',
   isNew: 'New', onBranch: 'On branch {0}', newOnBranch: 'New on branch {0}', partial: 'Partial',
-  progressCommit: 'Progress commit {0}',
+  progressCommit: 'Last progress {0}',
   footer: 'Counts cover main; work on branches is listed under In progress.',
   pastEndNote: 'On branch is known only for periods that end today.',
   generated: 'Generated {0}', repositories: 'Repositories: {0}', speclog: 'Speclog {0}', showItems: '{0} items',
@@ -82,5 +83,41 @@ describe('renderReport', () => {
     const svg = curveSvg([{ done: 0, total: 10 }, { done: 5, total: 10 }], 200, 80);
     expect(svg).toContain('<polyline');
     expect(svg).toContain('points="0,80 200,40"');
+  });
+});
+
+describe('renderReport details', () => {
+  const many = (n: number): ReportItem[] => Array.from({ length: n }, (_, i) => item('I' + i));
+  it('expandAll opens every details element', () => {
+    const m = model(repo({ remaining: many(21) }));
+    expect(renderReportDocument(m, s, meta)).toContain('<details><summary>');
+    const all = renderReportDocument(m, s, meta, { expandAll: true });
+    expect(all).not.toContain('<details>');
+    expect(all).toContain('<details open><summary>21 items');
+  });
+  it('print CSS forces collapsed details content visible', () => {
+    const html = renderReportDocument(model(), s, meta);
+    expect(html).toContain('details::details-content { content-visibility: visible; display: block; }');
+    expect(html).not.toContain('summary { display: none }');
+  });
+  it('renders Reopened and Dropped or removed sections only when non-empty', () => {
+    const none = renderReportBody(model(), s, meta);
+    expect(none).not.toContain('<h3>Reopened');
+    expect(none).not.toContain('<h3>Dropped or removed');
+    const html = renderReportBody(model(repo({ changed: [
+      item('R1', { status: 'open', change: 'reopened' }), item('D1', { status: 'dropped', change: 'dropped' }),
+      item('X1', { change: 'removed' })] })), s, meta);
+    expect(html).toContain('<h3>Reopened (1)</h3>');
+    expect(html).toContain('<h3>Dropped or removed (2)</h3>');
+    expect(html).toContain('>Removed<');
+    expect(html).toContain('>Dropped<');
+    expect(html).toContain('Reopened, dropped or removed');
+  });
+  it('Remaining status column uses status wording', () => {
+    expect(renderReportBody(model(repo({ remaining: [item('A')] })), s, meta)).toContain('>Not started<');
+  });
+  it('curve svg carries an accessible label', () => {
+    const html = renderReportBody(model(), s, meta);
+    expect(html).toContain('aria-label="74% (391/528) → 78% (412/530)"');
   });
 });

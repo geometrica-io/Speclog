@@ -28,7 +28,9 @@ summary { cursor: pointer; color: #1f5fa8; font-size: 13px; }
   @page { size: A4; margin: 15mm }
   body { padding: 0; font-size: 11pt; }
   details { display: block }
-  details > summary { display: none }
+  details::details-content { content-visibility: visible; display: block; }
+  details > summary { list-style: none; cursor: default; color: #323f4b; font-weight: 600; font-size: 12pt }
+  details > summary::-webkit-details-marker { display: none }
   .repo { break-before: page }
   .repo:first-of-type { break-before: auto }
   tr, h2, h3 { break-inside: avoid; }

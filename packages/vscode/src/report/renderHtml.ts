@@ -32,7 +32,7 @@ function delta(a: Progress, b: Progress): { text: string; cls: string } {
 const num = (n: number): string => String(Number(n.toFixed(2)));
 
 /** Polyline of the percent over the points (total 0 skipped), y axis 0-100 %. */
-export function curveSvg(points: Progress[], width: number, height: number): string {
+export function curveSvg(points: Progress[], width: number, height: number, label = ''): string {
   const n = points.length;
   const pts: string[] = [];
   points.forEach((p, i) => {
@@ -51,7 +51,9 @@ export function curveSvg(points: Progress[], width: number, height: number): str
     const [cx, cy] = pts[0].split(',');
     line = `<circle cx="${cx}" cy="${cy}" r="3" fill="#1f5fa8"/>`;
   }
-  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" xmlns="http://www.w3.org/2000/svg">${grid}${line}</svg>`;
+  const name = label ? ` aria-label="${e(label)}"` : '';
+  const title = label ? `<title>${e(label)}</title>` : '';
+  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img"${name} xmlns="http://www.w3.org/2000/svg">${title}${grid}${line}</svg>`;
 }
 
 /** Header cells are escaped here; body cells arrive as ready (escaped) HTML. */
@@ -74,7 +76,7 @@ function summaryTable(m: ReportModel, s: ReportStrings): string {
     return `<tr${cls ? ` class="${cls}"` : ''}>${cells.map((c, i) => `<td${i > 0 ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`;
   };
   const head = [s.repository, s.start, s.end, s.delta, s.finished, s.inProgress, s.added, s.remaining,
-    `${s.reopened} / ${s.droppedOrRemoved}`];
+    s.changedColumn];
   const th = head.map((h, i) => `<th${i > 0 ? ' class="num"' : ''}>${e(h)}</th>`).join('');
   const rows = m.repos.map((r) => row(r.name, r.start, r.end, [r])).join('');
   const total = m.repos.length > 1 ? row(s.total, m.total.start, m.total.end, m.repos, 'total') : '';
@@ -128,7 +130,7 @@ function repoSection(r: RepoReport, s: ReportStrings): string {
   return `<section class="repo"><h2>${e(r.name)}</h2>
 <p class="meta">${e(pct(r.start))} → ${e(pct(r.end))}</p>
 ${programRows(r.programs, s)}
-<div class="curve">${curveSvg(r.curve, 640, 160)}</div>
+<div class="curve">${curveSvg(r.curve, 640, 160, `${pct(r.start)} → ${pct(r.end)}`)}</div>
 ${listSection(s.finished, r.finished, s, s.colClosed, closedCell)}
 ${listSection(s.inProgress, r.inProgress, s, s.colReason, (it) => e(reasonText(it, s)))}
 ${listSection(s.added, r.added, s, s.colStatus, statusOf)}
@@ -148,19 +150,22 @@ export function renderReportBody(m: ReportModel, s: ReportStrings, meta: ReportM
 <h2>${e(s.summary)}</h2>
 ${summaryTable(m, s)}
 ${m.endIsLive ? '' : `<p class="note">${e(s.pastEndNote)}</p>`}
-<div class="curve">${curveSvg(m.total.curve, 640, 160)}</div>
+<div class="curve">${curveSvg(m.total.curve, 640, 160, `${pct(m.total.start)} → ${pct(m.total.end)}`)}</div>
 ${m.repos.map((r) => repoSection(r, s)).join('\n')}
 <p class="footer">${e(s.footer)}</p>
 </div>`;
 }
 
-export function renderReportDocument(m: ReportModel, s: ReportStrings, meta: ReportMeta): string {
+/** expandAll: every details element is open (the print / PDF path). */
+export function renderReportDocument(m: ReportModel, s: ReportStrings, meta: ReportMeta, opts: { expandAll?: boolean } = {}): string {
+  // Model text is escaped, so a literal '<details>' comes only from our own markup.
+  const body = renderReportBody(m, s, meta);
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${e(s.title)}</title>
 <style>${REPORT_CSS}</style></head>
 <body>
-${renderReportBody(m, s, meta)}
+${opts.expandAll ? body.split('<details>').join('<details open>') : body}
 </body></html>
 `;
 }
