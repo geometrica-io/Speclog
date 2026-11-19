@@ -121,4 +121,38 @@ describe('replay', () => {
       await rs.close();
     }
   }, T);
+
+  it('carries a live snapshot error', async () => {
+    const a = await repo('a');
+    await a.commit('init', { 'docs/tasks/a.md': file(item('A1')) }, '2026-03-01T12:00:00');
+    const live = { ...(await snapOf(a, 'a')), error: 'git log: boom' };
+    const rs = new ReplaySession([live], 'unverified');
+    try {
+      expect((await rs.at('2026-03-02')).error).toBe('git log: boom');
+    } finally {
+      await rs.close();
+    }
+  }, T);
+
+  it('a close on a side branch counts from its merge, not its own date', async () => {
+    const r = await repo();
+    await r.commit('init', { 'docs/tasks/a.md': file(item('A')) }, '2026-03-01T12:00:00');
+    await r.git(['checkout', '-b', 'side']);
+    await r.commit('close A\n\nTask: A', { 'y.txt': '1' }, '2026-03-02T12:00:00');
+    await r.git(['checkout', 'main']);
+    await r.commit('main work', { 'x.txt': '1' }, '2026-03-03T12:00:00');
+    process.env.GIT_COMMITTER_DATE = '2026-03-04T12:00:00';
+    try {
+      await r.merge('side');
+    } finally {
+      delete process.env.GIT_COMMITTER_DATE;
+    }
+    const rs = new ReplaySession([await snapOf(r)], 'unverified');
+    try {
+      expect(findItem((await rs.at('2026-03-03')).workspace, 'repo', 'A')!.status).toBe('open');
+      expect(findItem((await rs.at('2026-03-04')).workspace, 'repo', 'A')!.status).toBe('done');
+    } finally {
+      await rs.close();
+    }
+  }, T);
 });
