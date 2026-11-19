@@ -16,8 +16,14 @@ import type { UnverifiedMode, Workspace } from './status';
  * (YYYY-MM-DD); '' if none, or if the tip is empty or not among mainCommits.
  */
 export function commitAtDay(snap: RepoSnapshot, day: string): string {
-  const byHash = new Map(snap.mainCommits.map((c) => [c.hash, c]));
-  let c = byHash.get(snap.tipHash);
+  return commitAtDayIn(indexOf(snap), snap.tipHash, day);
+}
+
+type CommitIndex = Map<string, CommitInfo>;
+const indexOf = (snap: RepoSnapshot): CommitIndex => new Map(snap.mainCommits.map((c) => [c.hash, c]));
+
+function commitAtDayIn(byHash: CommitIndex, tip: string, day: string): string {
+  let c = byHash.get(tip);
   while (c) {
     if (c.date <= day) return c.hash;
     c = c.parents.length > 0 ? byHash.get(c.parents[0]) : undefined;
@@ -27,7 +33,10 @@ export function commitAtDay(snap: RepoSnapshot, day: string): string {
 
 /** Commits of snap.mainCommits reachable from hash (all parents), in mainCommits order. */
 export function ancestorsOf(snap: RepoSnapshot, hash: string): CommitInfo[] {
-  const byHash = new Map(snap.mainCommits.map((c) => [c.hash, c]));
+  return ancestorsIn(snap, indexOf(snap), hash);
+}
+
+function ancestorsIn(snap: RepoSnapshot, byHash: CommitIndex, hash: string): CommitInfo[] {
   const seen = new Set<string>();
   const stack = [hash];
   while (stack.length > 0) {
@@ -43,8 +52,11 @@ export function ancestorsOf(snap: RepoSnapshot, hash: string): CommitInfo[] {
 
 /** Replays the live snapshots at days; one blob reader per repository, one shared parse cache. */
 export class ReplaySession {
+  /** One per repository, opened lazily. A dead reader is not replaced within a session (a new session is made per report run). */
   private readonly readers = new Map<string, { reader: BlobReader; trees: TreeReader }>();
   private readonly cache: ParseCache = createParseCache();
+  /** hash -> commit per live snapshot, built once. */
+  private readonly indexes = new Map<RepoSnapshot, CommitIndex>();
 
   constructor(private readonly snapshots: readonly RepoSnapshot[], private readonly mode: UnverifiedMode,
     private readonly signal?: AbortSignal) {}
@@ -66,7 +78,10 @@ export class ReplaySession {
       if (this.signal?.aborted) {
         return { workspace: resolveAll(this.snapshots.map((s) => emptySnapshot(s.repo)), this.mode), error: 'cancelled' };
       }
-      const c = commitAtDay(live, day);
+      if (live.error && !error) error = live.error;
+      let idx = this.indexes.get(live);
+      if (!idx) this.indexes.set(live, (idx = indexOf(live)));
+      const c = commitAtDayIn(idx, live.tipHash, day);
       if (c === '') {
         replayed.push(emptySnapshot(live.repo));
         continue;
@@ -76,7 +91,7 @@ export class ReplaySession {
       if (r.error && !error) error = r.error;
       replayed.push({
         ...emptySnapshot(live.repo),
-        main: live.main, tipHash: c, programs: r.programs, mainCommits: ancestorsOf(live, c),
+        main: live.main, tipHash: c, programs: r.programs, mainCommits: ancestorsIn(live, idx, c),
         trustCommit: live.trustCommit, programsAtTrust: live.programsAtTrust,
         sinceCommit: live.sinceCommit, programsAtSince: live.programsAtSince, hasSinceFile: live.hasSinceFile,
         formats: live.formats, hasTaskFiles: live.hasTaskFiles,
