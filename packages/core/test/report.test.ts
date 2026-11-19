@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { buildReport, percent } from '../src/report';
+import { describe, it, expect, afterEach } from 'vitest';
+import { buildReport, computeReport, percent } from '../src/report';
+import { periodOf } from '../src/reportPeriod';
+import { buildSnapshot } from '../src/snapshot';
+import { TestRepo } from './helpers/testRepo';
 import type { ReportInput, ReportModel } from '../src/report';
 import { resolveAll } from '../src/status';
 import type { Workspace } from '../src/status';
@@ -263,3 +266,78 @@ describe('buildReport', () => {
 function branch(name: string, commits: CommitInfo[], programs: Program[] = []): BranchData {
   return { tip: { name, ref: `refs/heads/${name}`, hash: commits[0]?.hash ?? '', date: '' }, commits, programs };
 }
+
+describe('computeReport', () => {
+  const T = 120000;
+  const cleanups: Array<{ cleanup(): void }> = [];
+  afterEach(() => {
+    while (cleanups.length) cleanups.pop()!.cleanup();
+  });
+  const it_ = (id: string) => `## ${id} Title ${id}\nstatus: open\nsize: S\n\n`;
+  const file = (items: string) => `# Prog\nprogram: P\narea: A\ncreated: 2026-01-01\n\n${items}`;
+
+  async function setup(today: string) {
+    const r = await TestRepo.create('repo');
+    cleanups.push(r);
+    await r.commit('init', { 'docs/tasks/a.md': file(it_('A') + it_('B')) }, '2026-03-01T12:00:00');
+    await r.commit('close A\n\nTask: A', { 'x.txt': '1' }, '2026-03-02T12:00:00');
+    await r.commit('close B\n\nTask: B', { 'x.txt': '2' }, '2026-03-03T12:00:00');
+    const snap = await buildSnapshot({ name: 'repo', owner: '', path: r.dir, origin: '', key: r.dir }, { today });
+    const live = resolveAll([snap], 'unverified');
+    return { r, snap, live };
+  }
+
+  it('builds one curve point per day; last point equals end', async () => {
+    const { r, snap, live } = await setup('2026-03-03');
+    const period = periodOf('custom', '2026-03-03', '2026-03-01', '2026-03-03');
+    const calls: Array<[number, number]> = [];
+    const res = await computeReport({
+      snapshots: [snap], live, today: '2026-03-03', period, mode: 'unverified', selectedRepoPaths: [r.dir],
+      onProgress: (d, t) => calls.push([d, t]),
+    });
+    expect(res.error).toBe('');
+    const m = res.model!;
+    expect(m.curveDays).toEqual(['2026-02-28', '2026-03-01', '2026-03-02', '2026-03-03']);
+    expect(m.total.curve.map((p) => p.done)).toEqual([0, 0, 1, 2]);
+    expect(m.total.curve.map((p) => p.total)).toEqual([0, 2, 2, 2]);
+    expect(m.total.curve[3]).toEqual(m.total.end);
+    expect(m.endIsLive).toBe(true);
+    expect(calls[0]).toEqual([0, 3]);
+    expect(calls[calls.length - 1]).toEqual([3, 3]);
+  }, T);
+
+  it('replays the end day when the period ended in the past', async () => {
+    const { r, snap, live } = await setup('2026-03-10');
+    const period = periodOf('custom', '2026-03-10', '2026-03-01', '2026-03-02');
+    const calls: Array<[number, number]> = [];
+    const res = await computeReport({
+      snapshots: [snap], live, today: '2026-03-10', period, mode: 'unverified', selectedRepoPaths: [r.dir],
+      onProgress: (d, t) => calls.push([d, t]),
+    });
+    const m = res.model!;
+    expect(m.endIsLive).toBe(false);
+    expect(m.total.end).toEqual({ done: 1, total: 2 });
+    expect(m.total.curve[m.total.curve.length - 1]).toEqual(m.total.end);
+    expect(calls[calls.length - 1]).toEqual([3, 3]);
+  }, T);
+
+  it('returns cancelled when aborted', async () => {
+    const { r, snap, live } = await setup('2026-03-03');
+    const ac = new AbortController();
+    ac.abort();
+    const res = await computeReport({
+      snapshots: [snap], live, today: '2026-03-03', period: periodOf('custom', '2026-03-03', '2026-03-01', '2026-03-03'),
+      mode: 'unverified', selectedRepoPaths: [r.dir], signal: ac.signal,
+    });
+    expect(res).toEqual({ model: null, error: 'cancelled' });
+  }, T);
+
+  it('returns no model when a snapshot carries an error', async () => {
+    const { r, snap, live } = await setup('2026-03-03');
+    const res = await computeReport({
+      snapshots: [{ ...snap, error: 'boom' }], live, today: '2026-03-03',
+      period: periodOf('custom', '2026-03-03', '2026-03-01', '2026-03-03'), mode: 'unverified', selectedRepoPaths: [r.dir],
+    });
+    expect(res).toEqual({ model: null, error: 'boom' });
+  }, T);
+});
