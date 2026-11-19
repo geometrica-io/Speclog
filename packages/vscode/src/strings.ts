@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import type { AgentBlock, Guard } from '@speclog/core';
 import type { Strings } from './protocol';
+import type { ReportStrings } from './report/reportStrings';
 
 const P0 = '{0}', P1 = '{1}', P2 = '{2}';
 
@@ -181,4 +182,56 @@ export function agentGuardText(g: Guard): string {
       : vscode.l10n.t('Work on this item is already on another branch.');
     case 'unverified': return vscode.l10n.t('The file says done but there is no evidence in git.');
   }
+}
+
+/** Labels of the report renderers (HTML export and report tab). */
+export function reportStrings(): ReportStrings {
+  return {
+    title: vscode.l10n.t('Speclog report'),
+    summary: vscode.l10n.t('Summary'),
+    finished: vscode.l10n.t('Finished'),
+    inProgress: vscode.l10n.t('In progress'),
+    added: vscode.l10n.t('Added'),
+    remaining: vscode.l10n.t('Remaining'),
+    reopened: vscode.l10n.t('Reopened'),
+    droppedOrRemoved: vscode.l10n.t('Dropped or removed'),
+    total: vscode.l10n.t('Total'),
+    repository: vscode.l10n.t('Repository'),
+    period: vscode.l10n.t('Period'),
+    start: vscode.l10n.t('Start'),
+    end: vscode.l10n.t('End'),
+    delta: vscode.l10n.t('Change (points)'),
+    colId: vscode.l10n.t('ID'),
+    colTitle: vscode.l10n.t('Title'),
+    colProgram: vscode.l10n.t('Program'),
+    colClosed: vscode.l10n.t('Closed'),
+    colReason: vscode.l10n.t('Reason'),
+    colStatus: vscode.l10n.t('Status'),
+    colChange: vscode.l10n.t('Change'),
+    colProgress: vscode.l10n.t('Progress'),
+    changeDropped: vscode.l10n.t('Dropped'),
+    changeRemoved: vscode.l10n.t('Removed'),
+    isNew: vscode.l10n.t('New'),
+    onBranch: vscode.l10n.t('On branch {0}'),
+    newOnBranch: vscode.l10n.t('New on branch {0}'),
+    partial: vscode.l10n.t('Partial'),
+    progressCommit: vscode.l10n.t('Progress commit {0}'),
+    footer: vscode.l10n.t('Counts cover main; work on branches is listed under In progress.'),
+    pastEndNote: vscode.l10n.t('On branch is known only for periods that end today.'),
+    generated: vscode.l10n.t('Generated {0}'),
+    repositories: vscode.l10n.t('Repositories: {0}'),
+    speclog: vscode.l10n.t('Speclog {0}'),
+    showItems: vscode.l10n.t('{0} items'),
+    status: {
+      open: vscode.l10n.t('Not started'),
+      partial: vscode.l10n.t('Partial'),
+      bug: vscode.l10n.t('Bug'),
+      verify: vscode.l10n.t('Needs verification'),
+      decision: vscode.l10n.t('Needs decision'),
+      dropped: vscode.l10n.t('Dropped'),
+      done: vscode.l10n.t('Done'),
+      onBranch: vscode.l10n.t('On branch'),
+      unverified: vscode.l10n.t('Unverified'),
+    },
+  };
 }
