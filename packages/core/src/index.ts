@@ -15,3 +15,4 @@ export * from './viewTree';
 export * from './scheduler';
 export * from './engine';
 export * from './replay';
+export * from './reportPeriod';
