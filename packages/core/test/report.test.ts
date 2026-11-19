@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { buildReport, computeReport, percent } from '../src/report';
+import { ReplayCache, buildReport, computeReport, percent } from '../src/report';
 import { periodOf } from '../src/reportPeriod';
-import { buildSnapshot } from '../src/snapshot';
-import { TestRepo } from './helpers/testRepo';
+import { buildSnapshot, emptySnapshot } from '../src/snapshot';
+import { BlobReader } from '../src/git/blobReader';
+import { TestRepo, makeTempDir, removeTree } from './helpers/testRepo';
 import type { ReportInput, ReportModel } from '../src/report';
 import { resolveAll } from '../src/status';
 import type { Workspace } from '../src/status';
@@ -255,6 +256,26 @@ describe('buildReport', () => {
     expect(r.remaining.map((i) => i.programTitle)).toEqual(['a.md', 'Beta']);
   });
 
+  it('dropped at start and not dropped at end lands in its state list, not Added or Changed', () => {
+    const start = ws(repo('R', [prog('a.md', [mkItem('A', 'dropped')])]));
+    const end = ws(repo('R', [prog('a.md', [mkItem('A')])]));
+    const r = build(start, end).repos[0];
+    expect(ids(r.remaining)).toEqual(['A']);
+    expect(r.remaining[0].isNew).toBe(false);
+    expect(r.added).toEqual([]);
+    expect(r.changed).toEqual([]);
+  });
+
+  it('keeps only the warnings of selected repositories, once each', () => {
+    const w = ws(repo('R', [prog('a.md', [mkItem('A')])]), repo('S', [prog('b.md', [mkItem('B')])]));
+    const m = build(w, w, { warnings: [
+      { repo: 'R', repoPath: '/r/R', message: 'boom' }, { repo: 'R', repoPath: '/r/R', message: 'boom' },
+      { repo: 'S', repoPath: '/r/S', message: 'not selected' },
+    ] });
+    expect(m.warnings).toEqual([{ repo: 'R', message: 'boom' }]);
+    expect(build(w, w).warnings).toEqual([]);
+  });
+
   it('Changed sorts removed and end items together by program path then line', () => {
     const start = ws(repo('R', [prog('b.md', [mkItem('B1', 'open', { line: 1 })]),
       prog('a.md', [mkItem('GONE', 'open', { line: 8 }), mkItem('D', 'open', { line: 3 })])]));
@@ -333,12 +354,127 @@ describe('computeReport', () => {
     expect(res).toEqual({ model: null, error: 'cancelled' });
   }, T);
 
-  it('returns no model when a snapshot carries an error', async () => {
+  const period3 = () => periodOf('custom', '2026-03-03', '2026-03-01', '2026-03-03');
+  /** Counts the blob readers a run opens and closes; dir: read from another folder instead. */
+  function readers(dir?: string) {
+    const c = { opened: 0, closed: 0 };
+    const open = (p: string, signal?: AbortSignal): BlobReader => {
+      c.opened++;
+      const r = new BlobReader(dir ?? p, signal);
+      const close = r.close.bind(r);
+      r.close = async () => { c.closed++; await close(); };
+      return r;
+    };
+    return { c, open };
+  }
+  const other = (error: string): RepoSnapshot => ({
+    ...emptySnapshot({ name: 'other', owner: '', path: '/nowhere/other', origin: '', key: '/nowhere/other' }), error,
+  });
+
+  it('an unselected repository with a live error neither blocks the report nor adds a warning', async () => {
     const { r, snap, live } = await setup('2026-03-03');
     const res = await computeReport({
-      snapshots: [{ ...snap, error: 'boom' }], live, today: '2026-03-03',
-      period: periodOf('custom', '2026-03-03', '2026-03-01', '2026-03-03'), mode: 'unverified', selectedRepoPaths: [r.dir],
+      snapshots: [snap, other('boom')], live, today: '2026-03-03', period: period3(), mode: 'unverified', selectedRepoPaths: [r.dir],
     });
-    expect(res).toEqual({ model: null, error: 'boom' });
+    expect(res.error).toBe('');
+    expect(res.model!.warnings).toEqual([]);
+    expect(res.model!.total.end).toEqual({ done: 2, total: 2 });
+  }, T);
+
+  it('a selected repository with a live error is reported with a warning naming it', async () => {
+    const { r, snap, live } = await setup('2026-03-03');
+    const res = await computeReport({
+      snapshots: [{ ...snap, error: 'git log: boom' }], live, today: '2026-03-03', period: period3(), mode: 'unverified',
+      selectedRepoPaths: [r.dir],
+    });
+    expect(res.error).toBe('');
+    expect(res.model!.warnings).toEqual([{ repo: 'repo', message: 'git log: boom' }]);
+    expect(res.model!.total.curve.map((p) => p.done)).toEqual([0, 0, 1, 2]);
+  }, T);
+
+  it('a replay read failure returns no model, names the repository and closes the session', async () => {
+    const { r, snap, live } = await setup('2026-03-03');
+    const bogus = makeTempDir('notrepo');
+    cleanups.push({ cleanup: () => removeTree(bogus) });
+    const { c, open } = readers(bogus);
+    const res = await computeReport({
+      snapshots: [snap], live, today: '2026-03-03', period: period3(), mode: 'unverified', selectedRepoPaths: [r.dir],
+      openBlobReader: open,
+    });
+    expect(res.model).toBeNull();
+    expect(res.error).toMatch(/^repo: ./);
+    expect(c.opened).toBe(1);
+    expect(c.closed).toBe(1);
+  }, T);
+
+  it("uses the live workspace for the end and today's curve point", async () => {
+    const { r, snap } = await setup('2026-03-03');
+    const p = snap.programs[0];
+    const extra = { ...p.items[0], id: 'C', title: 'Title C', line: 99 };
+    const live = resolveAll([{ ...snap, programs: [{ ...p, items: [...p.items, extra] }] }], 'unverified');
+    const res = await computeReport({
+      snapshots: [snap], live, today: '2026-03-03', period: period3(), mode: 'unverified', selectedRepoPaths: [r.dir],
+    });
+    const m = res.model!;
+    expect(m.total.end).toEqual({ done: 2, total: 3 });
+    expect(m.total.curve[m.total.curve.length - 1]).toEqual({ done: 2, total: 3 });
+    expect(m.total.curve[2]).toEqual({ done: 1, total: 2 });
+    expect(m.repos[0].remaining.map((x) => x.id)).toEqual(['C']);
+  }, T);
+
+  it('an abort between days returns cancelled and closes the session', async () => {
+    const { r, snap, live } = await setup('2026-03-03');
+    const ac = new AbortController();
+    const { c, open } = readers();
+    const res = await computeReport({
+      snapshots: [snap], live, today: '2026-03-03', period: period3(), mode: 'unverified', selectedRepoPaths: [r.dir],
+      signal: ac.signal, openBlobReader: open, onProgress: (d) => { if (d === 2) ac.abort(); }, // day 1 predates the repository: no reader yet
+    });
+    expect(res).toEqual({ model: null, error: 'cancelled' });
+    expect(c.opened).toBe(1);
+    expect(c.closed).toBe(1);
+  }, T);
+
+  it('a single-day period ending today replays only the day before', async () => {
+    const { r, snap, live } = await setup('2026-03-03');
+    const period = periodOf('custom', '2026-03-03', '2026-03-03', '2026-03-03');
+    const calls: Array<[number, number]> = [];
+    const res = await computeReport({
+      snapshots: [snap], live, today: '2026-03-03', period, mode: 'unverified', selectedRepoPaths: [r.dir],
+      onProgress: (d, t) => calls.push([d, t]),
+    });
+    const m = res.model!;
+    expect(m.curveDays).toEqual(['2026-03-02', '2026-03-03']);
+    expect(m.total.start).toEqual({ done: 1, total: 2 });
+    expect(m.total.end).toEqual({ done: 2, total: 2 });
+    expect(m.repos[0].finished.map((x) => x.id)).toEqual(['B']);
+    expect(calls[calls.length - 1]).toEqual([1, 1]);
+  }, T);
+
+  it('a replay cache serves a new selection without replaying again', async () => {
+    const { r, snap, live } = await setup('2026-03-03');
+    const cache = new ReplayCache();
+    const { c, open } = readers();
+    const run = (selected: string[], period = period3()) => computeReport({
+      snapshots: [snap], live, today: '2026-03-03', period, mode: 'unverified', selectedRepoPaths: selected,
+      cache, openBlobReader: open,
+    });
+    const first = await run([r.dir]);
+    expect(first.model!.repos).toHaveLength(1);
+    expect(c.opened).toBe(1);
+    const second = await run([]);
+    expect(second.model!.repos).toHaveLength(0);
+    expect(c.opened).toBe(1);
+    const third = await run([r.dir]);
+    expect(third.model!.total).toEqual(first.model!.total);
+    expect(c.opened).toBe(1);
+    // Another period, or new snapshots, replay again.
+    await run([r.dir], periodOf('custom', '2026-03-03', '2026-03-02', '2026-03-03'));
+    expect(c.opened).toBe(2);
+    await computeReport({
+      snapshots: [{ ...snap }], live, today: '2026-03-03', period: period3(), mode: 'unverified', selectedRepoPaths: [r.dir],
+      cache, openBlobReader: open,
+    });
+    expect(c.opened).toBe(3);
   }, T);
 });

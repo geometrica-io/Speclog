@@ -6,6 +6,7 @@ import type { Status } from './model';
 import type { Period } from './reportPeriod';
 import { curveDays, startDay } from './reportPeriod';
 import { ReplaySession } from './replay';
+import type { ReplayOptions, ReplayWarning } from './replay';
 import type { RepoSnapshot } from './snapshot';
 import type { ResolvedItem, UnverifiedMode, Workspace } from './status';
 
@@ -34,6 +35,9 @@ export interface RepoReport {
   finished: ReportItem[]; inProgress: ReportItem[]; added: ReportItem[]; remaining: ReportItem[]; changed: ReportItem[];
 }
 
+/** A note about a selected repository's data (e.g. its last scan failed and older data was used). */
+export interface ReportWarning { repo: string; message: string; }
+
 export interface ReportModel {
   period: Period; startDay: string; curveDays: string[];
   /** The end state is the board's (the period ends today). */
@@ -41,6 +45,8 @@ export interface ReportModel {
   /** Selected repositories, in the order given. */
   repos: RepoReport[];
   total: { start: Progress; end: Progress; curve: Progress[] };
+  /** Notes about the selected repositories' data, once each; [] when there are none. */
+  warnings: ReportWarning[];
 }
 
 export interface ReportInput {
@@ -48,6 +54,8 @@ export interface ReportInput {
   /** Ascending by day; the curve days. */
   curve: { day: string; workspace: Workspace }[];
   selectedRepoPaths: readonly string[];
+  /** Replay warnings of any repository; only the selected repositories' ones reach the model. */
+  warnings?: readonly ReplayWarning[];
 }
 
 export function percent(p: Progress): number | null {
@@ -56,9 +64,27 @@ export function percent(p: Progress): number | null {
 
 const keyOf = (r: ResolvedItem): string => `${r.repoPath}\u0000${r.program.format}\u0000${normalizeId(r.program.format, r.item.id)}`;
 
+/** Items of a workspace by repository path, grouped once per workspace (curve days share workspaces). */
+const grouped = new WeakMap<Workspace, Map<string, { all: ResolvedItem[]; main: ResolvedItem[] }>>();
+
+function itemsOf(w: Workspace, repoPath: string): { all: ResolvedItem[]; main: ResolvedItem[] } {
+  let g = grouped.get(w);
+  if (!g) {
+    g = new Map();
+    for (const r of w.items) {
+      let e = g.get(r.repoPath);
+      if (!e) g.set(r.repoPath, (e = { all: [], main: [] }));
+      e.all.push(r);
+      if (!r.branchOnly) e.main.push(r);
+    }
+    grouped.set(w, g);
+  }
+  return g.get(repoPath) ?? { all: [], main: [] };
+}
+
 /** One repository's items of one workspace, on main only. */
 function mainItems(w: Workspace, repoPath: string): ResolvedItem[] {
-  return w.items.filter((r) => r.repoPath === repoPath && !r.branchOnly);
+  return itemsOf(w, repoPath).main;
 }
 
 function progressOf(items: readonly ResolvedItem[]): Progress {
@@ -160,8 +186,8 @@ function repoReport(path: string, input: ReportInput): RepoReport {
     }
   }
   if (endIsLive) {
-    for (const r of end.items) {
-      if (r.repoPath !== path || !r.branchOnly || r.status === 'dropped') continue;
+    for (const r of itemsOf(end, path).all) {
+      if (!r.branchOnly || r.status === 'dropped') continue;
       inProgress.push({ ...toLine(r, false), progressReason: reasonOf(r, period.from, period.to, true) });
     }
   }
@@ -180,6 +206,20 @@ function repoReport(path: string, input: ReportInput): RepoReport {
   };
 }
 
+/** The selected repositories' warnings, once each; an unselected repository's warnings are dropped. */
+function warningsOf(input: ReportInput): ReportWarning[] {
+  const selected = new Set(input.selectedRepoPaths);
+  const seen = new Set<string>();
+  const out: ReportWarning[] = [];
+  for (const w of input.warnings ?? []) {
+    const k = `${w.repo}\u0000${w.message}`;
+    if (!selected.has(w.repoPath) || seen.has(k)) continue;
+    seen.add(k);
+    out.push({ repo: w.repo, message: w.message });
+  }
+  return out;
+}
+
 export function buildReport(input: ReportInput): ReportModel {
   const repos = input.selectedRepoPaths.map((p) => repoReport(p, input));
   const sum = (pick: (r: RepoReport) => Progress): Progress => repos.reduce((a, r) => addProgress(a, pick(r)), ZERO);
@@ -194,42 +234,97 @@ export function buildReport(input: ReportInput): ReportModel {
       end: sum((r) => r.end),
       curve: input.curve.map((_, i) => sum((r) => r.curve[i])),
     },
+    warnings: warningsOf(input),
   };
 }
 
-export interface ComputeReportOptions {
-  snapshots: readonly RepoSnapshot[]; live: Workspace; today: string; period: Period; mode: UnverifiedMode;
-  selectedRepoPaths: readonly string[]; signal?: AbortSignal;
+export interface ReplayDaysOptions {
+  snapshots: readonly RepoSnapshot[]; today: string; period: Period; mode: UnverifiedMode; signal?: AbortSignal;
   onProgress?: (doneSteps: number, totalSteps: number) => void;
+  /** Opens a repository's blob reader (tests: to count readers); default: a new BlobReader. */
+  openBlobReader?: ReplayOptions['openBlobReader'];
 }
 
-/** Replays each distinct day once (the live workspace stands in for today) and builds the report. */
-export async function computeReport(o: ComputeReportOptions): Promise<{ model: ReportModel | null; error: string }> {
+/** The replayed board of every curve day except a today the live workspace stands in for, and the warnings. */
+export interface ReplayedDays { byDay: ReadonlyMap<string, Workspace>; warnings: readonly ReplayWarning[]; }
+
+/**
+ * Replays each distinct curve day once. Null with the error when a replay read fails or the run is cancelled;
+ * the session is closed in every case.
+ */
+export async function replayDays(o: ReplayDaysOptions): Promise<{ days: ReplayedDays | null; error: string }> {
   const days = curveDays(o.period);
   const endIsLive = o.period.to === o.today;
   const toReplay = days.filter((d) => !(endIsLive && d === o.today));
   const total = toReplay.length;
   o.onProgress?.(0, total);
-  const session = new ReplaySession(o.snapshots, o.mode, o.signal);
+  const session = new ReplaySession(o.snapshots, o.mode, o.signal, { openBlobReader: o.openBlobReader });
   try {
     const byDay = new Map<string, Workspace>();
+    const warnings = new Map<string, ReplayWarning>();
     for (const d of toReplay) {
-      if (o.signal?.aborted) return { model: null, error: 'cancelled' };
+      if (o.signal?.aborted) return { days: null, error: 'cancelled' };
       const r = await session.at(d);
-      if (r.error) return { model: null, error: r.error };
+      if (r.error) return { days: null, error: r.error };
+      for (const w of r.warnings) warnings.set(`${w.repoPath}\u0000${w.message}`, w);
       byDay.set(d, r.workspace);
       o.onProgress?.(byDay.size, total);
     }
-    if (o.signal?.aborted) return { model: null, error: 'cancelled' };
-    const wsOf = (d: string): Workspace => byDay.get(d) ?? o.live;
-    return {
-      model: buildReport({
-        period: o.period, start: wsOf(days[0]), end: wsOf(days[days.length - 1]),
-        endIsLive, curve: days.map((day) => ({ day, workspace: wsOf(day) })), selectedRepoPaths: o.selectedRepoPaths,
-      }),
-      error: '',
-    };
+    if (o.signal?.aborted) return { days: null, error: 'cancelled' };
+    return { days: { byDay, warnings: [...warnings.values()] }, error: '' };
   } finally {
     await session.close();
   }
+}
+
+/**
+ * The newest replay, reused while the snapshots (element by element), the mode, today and the period stay the
+ * same: a new repository selection then only rebuilds the report.
+ */
+export class ReplayCache {
+  private entry: { key: ReplayDaysOptions; days: ReplayedDays } | undefined;
+
+  get(o: ReplayDaysOptions): ReplayedDays | undefined {
+    const k = this.entry?.key;
+    if (!k || k.mode !== o.mode || k.today !== o.today || k.period.from !== o.period.from || k.period.to !== o.period.to) return undefined;
+    if (k.snapshots.length !== o.snapshots.length || k.snapshots.some((s, i) => s !== o.snapshots[i])) return undefined;
+    return this.entry!.days;
+  }
+
+  set(o: ReplayDaysOptions, days: ReplayedDays): void {
+    this.entry = { key: { snapshots: [...o.snapshots], mode: o.mode, today: o.today, period: { ...o.period } }, days };
+  }
+}
+
+export interface ComputeReportOptions extends ReplayDaysOptions {
+  live: Workspace; selectedRepoPaths: readonly string[];
+  /** Reuses an earlier replay of the same snapshots and period (see ReplayCache). */
+  cache?: ReplayCache;
+}
+
+/** The report from replayed days; the live workspace stands in for today when the period ends today. */
+export function reportFromDays(days: ReplayedDays, o: { period: Period; today: string; live: Workspace; selectedRepoPaths: readonly string[] }): ReportModel {
+  const curve = curveDays(o.period);
+  const endIsLive = o.period.to === o.today;
+  const wsOf = (d: string): Workspace => days.byDay.get(d) ?? o.live;
+  return buildReport({
+    period: o.period, start: wsOf(curve[0]), end: wsOf(curve[curve.length - 1]),
+    endIsLive, curve: curve.map((day) => ({ day, workspace: wsOf(day) })), selectedRepoPaths: o.selectedRepoPaths,
+    warnings: days.warnings,
+  });
+}
+
+/** Replays each distinct day once (or reuses the cache's replay) and builds the report. */
+export async function computeReport(o: ComputeReportOptions): Promise<{ model: ReportModel | null; error: string }> {
+  let days = o.cache?.get(o);
+  if (days) {
+    o.onProgress?.(days.byDay.size, days.byDay.size);
+  } else {
+    const r = await replayDays(o);
+    if (!r.days) return { model: null, error: r.error };
+    days = r.days;
+    o.cache?.set(o, days);
+  }
+  if (o.signal?.aborted) return { model: null, error: 'cancelled' };
+  return { model: reportFromDays(days, o), error: '' };
 }

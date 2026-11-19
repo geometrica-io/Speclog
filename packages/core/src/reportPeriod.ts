@@ -21,8 +21,14 @@ function monthStart(n: number, offset: number): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + offset, 1) / 86400000;
 }
 
+/**
+ * The period of a preset ending at today (YYYY-MM-DD). Custom: the dates swapped into order and clamped to today
+ * (a range entirely after today becomes today alone); missing or invalid dates give This week.
+ * Throws an Error naming the value when today is not a valid date.
+ */
 export function periodOf(preset: PeriodPreset, today: string, from?: string, to?: string): Period {
   const t = dayNumber(today);
+  if (Number.isNaN(t)) throw new Error(`periodOf: invalid today "${today}"`);
   const week = (): Period => ({ preset: 'thisWeek', from: dateOfDay(mondayOf(t)), to: today });
   switch (preset) {
     case 'thisWeek':
@@ -40,7 +46,7 @@ export function periodOf(preset: PeriodPreset, today: string, from?: string, to?
       let a = from;
       let b = to;
       if (a > b) [a, b] = [b, a];
-      if (a > today) return week();
+      if (a > today) a = today;
       if (b > today) b = today;
       return { preset: 'custom', from: a, to: b };
     }
