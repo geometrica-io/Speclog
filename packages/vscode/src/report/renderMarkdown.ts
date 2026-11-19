@@ -5,9 +5,16 @@ import { delta, fill, pct, reasonText } from './renderHtml';
 import type { ReportMeta } from './renderHtml';
 import type { ReportStrings } from './reportStrings';
 
-/** Table cell: newlines become spaces, backslash, pipe and backtick are escaped. */
+const ENTITY: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
+
+/** Model text in prose: newlines become spaces; Markdown specials are backslash-escaped, HTML specials become entities. */
+function inline(v: string): string {
+  return v.replace(/\r\n|\r|\n/g, ' ').replace(/[\\`*_[\]]/g, (c) => '\\' + c).replace(/[&<>]/g, (c) => ENTITY[c]);
+}
+
+/** Table cell: inline text with the pipe escaped too. */
 function cell(v: string): string {
-  return v.replace(/\r\n|\r|\n/g, ' ').replace(/[\\|`]/g, (c) => '\\' + c);
+  return inline(v).replace(/\|/g, '\\|');
 }
 
 function table(head: string[], rows: string[][]): string {
@@ -37,7 +44,7 @@ function programTable(programs: ProgramReport[], s: ReportStrings): string {
 function listSection(title: string, items: ReportItem[], s: ReportStrings, col: string, value: (it: ReportItem) => string): string {
   if (items.length === 0) return '';
   const rows = items.map((it) => [it.isNew ? `${it.id} (${s.isNew})` : it.id, it.title, it.programTitle, value(it)]);
-  return `### ${cell(title)} (${items.length})\n\n${table([s.colId, s.colTitle, s.colProgram, col], rows)}\n`;
+  return `### ${inline(title)} (${items.length})\n\n${table([s.colId, s.colTitle, s.colProgram, col], rows)}\n`;
 }
 
 function repoSection(r: RepoReport, s: ReportStrings): string {
@@ -50,7 +57,7 @@ function repoSection(r: RepoReport, s: ReportStrings): string {
     return c ? `${it.closedDate} ${c.hash.slice(0, 7)} ${c.subject}` : it.closedDate;
   };
   return [
-    `## ${cell(r.name)}\n\n${pct(r.start)} → ${pct(r.end)}\n`,
+    `## ${inline(r.name)}\n\n${pct(r.start)} → ${pct(r.end)}\n`,
     programTable(r.programs, s),
     listSection(s.finished, r.finished, s, s.colClosed, closedOf),
     listSection(s.inProgress, r.inProgress, s, s.colReason, (it) => reasonText(it, s)),
@@ -62,11 +69,11 @@ function repoSection(r: RepoReport, s: ReportStrings): string {
 }
 
 export function renderReportMarkdown(m: ReportModel, s: ReportStrings, meta: ReportMeta): string {
-  const names = m.repos.map((r) => r.name).join(', ');
+  const names = m.repos.map((r) => inline(r.name)).join(', ');
   const parts = [
-    `# ${cell(s.title)}\n\n${s.period}: ${m.period.from} – ${m.period.to}  \n${fill(s.repositories, names)}  \n`
+    `# ${inline(s.title)}\n\n${s.period}: ${m.period.from} – ${m.period.to}  \n${fill(s.repositories, names)}  \n`
       + `${fill(s.generated, meta.generated)} · ${fill(s.speclog, meta.version)}\n`,
-    `## ${cell(s.summary)}\n\n${summaryTable(m, s)}\n`,
+    `## ${inline(s.summary)}\n\n${summaryTable(m, s)}\n`,
     ...(m.endIsLive ? [] : [`*${s.pastEndNote}*\n`]),
     `${pct(m.total.start)} → ${pct(m.total.end)}\n`,
     ...m.repos.map((r) => repoSection(r, s)),
