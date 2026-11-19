@@ -63,6 +63,46 @@ describe('renderReportMarkdown', () => {
     expect(md).toContain('a b \\`c\\`');
   });
 
+  it('escapes markup and HTML in titles', () => {
+    const md = renderReportMarkdown(model(repo({ remaining: [item('X.3', { title: '<img src=x> & a*b*c [x](http://e)' })] })), s, meta);
+    expect(md).toContain('&lt;img src=x&gt; &amp; a\\*b\\*c \\[x\\](http://e)');
+    expect(md).not.toContain('<img');
+  });
+
+  it('escapes backslashes', () => {
+    const md = renderReportMarkdown(model(repo({ remaining: [item('X.4', { title: 'a\\|b_c' })] })), s, meta);
+    expect(md).toContain('a\\\\\\|b\\_c');
+  });
+
+  it('escapes repo names in headings, header lines and rows', () => {
+    const md = renderReportMarkdown(model(repo({ name: 'A|B\nC<d>' })), s, meta);
+    expect(md).toContain('Repositories: A|B C&lt;d&gt;');
+    expect(md).toContain('## A|B C&lt;d&gt;');
+    expect(md).toContain('| A\\|B C&lt;d&gt; | 74%');
+    expect(md).not.toContain('<d>');
+  });
+
+  it('renders In progress, Reopened and Dropped or removed rows', () => {
+    const md = renderReportMarkdown(model(repo({
+      inProgress: [item('P.1', { progressReason: { kind: 'onBranch', branches: ['feat/a|b'], date: '' }, isNew: true })],
+      changed: [item('P.2', { change: 'reopened', status: 'partial' }), item('P.3', { change: 'dropped' }), item('P.4', { change: 'removed' })],
+    })), s, meta);
+    expect(md).toContain('| ID | Title | Program | Reason |');
+    expect(md).toContain('| P.1 (New) | TP.1 | Prog | On branch feat/a\\|b |');
+    expect(md).toContain('### Reopened (1)');
+    expect(md).toContain('| P.2 | TP.2 | Prog | Partial |');
+    expect(md).toContain('### Dropped or removed (2)');
+    expect(md).toContain('| P.3 | TP.3 | Prog | Dropped |');
+    expect(md).toContain('| P.4 | TP.4 | Prog | Removed |');
+  });
+
+  it('adds a Total row for several repos only', () => {
+    const a = repo({ name: 'A' }), b = repo({ name: 'B', start: { done: 1, total: 2 }, end: { done: 2, total: 2 } });
+    const two = model(a, { repos: [a, b], total: { start: { done: 392, total: 530 }, end: { done: 414, total: 532 }, curve: [] } });
+    expect(renderReportMarkdown(two, s, meta)).toContain('| Total | 74% (392/530) | 78% (414/532) | +4 |');
+    expect(renderReportMarkdown(model(), s, meta)).not.toContain('| Total |');
+  });
+
   it('adds the past-end note only when the end is not live', () => {
     expect(renderReportMarkdown(model(), s, meta)).not.toContain(s.pastEndNote);
     expect(renderReportMarkdown(model(repo(), { endIsLive: false }), s, meta)).toContain(s.pastEndNote);
