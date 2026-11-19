@@ -213,5 +213,22 @@
   "Generated {0}": "Generated {0}",
   "Repositories: {0}": "Repositories: {0}",
   "Speclog {0}": "Speclog {0}",
-  "{0} items": "{0} items"
+  "{0} items": "{0} items",
+  "Speclog Report": "Speclog Report",
+  "Speclog: the report could not be computed: {0}": "Speclog: the report could not be computed: {0}",
+  "Report": "Report",
+  "This week": "This week",
+  "Last week": "Last week",
+  "This month": "This month",
+  "Last month": "Last month",
+  "Custom": "Custom",
+  "From": "From",
+  "To": "To",
+  "Refresh": "Refresh",
+  "Export HTML": "Export HTML",
+  "Export Markdown": "Export Markdown",
+  "Print / PDF…": "Print / PDF…",
+  "Computing the report…": "Computing the report…",
+  "Computing the report… {0} / {1}": "Computing the report… {0} / {1}",
+  "Data changed": "Data changed"
 }

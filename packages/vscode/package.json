@@ -80,6 +80,11 @@
         "category": "Speclog"
       },
       {
+        "command": "speclog.openReport",
+        "title": "%command.openReport%",
+        "category": "Speclog"
+      },
+      {
         "command": "speclog.refresh",
         "title": "%command.refresh%",
         "category": "Speclog"

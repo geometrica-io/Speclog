@@ -1,4 +1,5 @@
-// Top bar: View and Sort comboboxes, search, Filter button (+ dropdown), summary, busy / fetch state, Attention button.
+// Top bar: View and Sort comboboxes, search, Filter button (+ dropdown), summary, busy / fetch state, Report and
+// Attention buttons.
 import type { FetchStateDto, FilterDto, FilterPreset, SortOrder, Status, Strings, ViewMode } from '../src/protocol';
 import type { RepoDto, SummaryDto } from '../src/protocol';
 import { SORTS } from '../src/protocol';
@@ -14,6 +15,7 @@ export interface TopBarCallbacks {
   setFilter(f: FilterDto): void;
   preset(p: FilterPreset): void;
   toggleAttention(): void;
+  openReport(): void;
 }
 
 /** Local "HH:MM", with the date in front when it is not today. */
@@ -37,6 +39,7 @@ export class TopBar {
   private readonly spinner: HTMLSpanElement;
   private readonly fetch: HTMLSpanElement;
   private readonly attention: HTMLButtonElement;
+  private readonly report: HTMLButtonElement;
   readonly popup: FilterPopup;
   private S: Strings | null = null;
   private filter: FilterDto = { statuses: [], hiddenRepos: [], sizes: [], search: '' };
@@ -90,9 +93,11 @@ export class TopBar {
     this.fetch = h('span', { class: 'fetch', attrs: { tabindex: '0' } });
     this.attention = h('button', { class: 'button attention-button', attrs: { 'type': 'button', 'aria-pressed': 'false' } });
     this.attention.addEventListener('click', () => cb.toggleAttention());
+    this.report = h('button', { class: 'button report-button', attrs: { type: 'button' } });
+    this.report.addEventListener('click', () => cb.openReport());
     this.element = h('div', { class: 'topbar' },
       h('div', { class: 'left' }, this.viewLabel, this.view, this.sortLabel, this.sort, this.search, filterWrap, this.shown),
-      h('div', { class: 'right' }, this.summary, this.spinner, this.fetch, this.attention));
+      h('div', { class: 'right' }, this.summary, this.spinner, this.fetch, this.report, this.attention));
   }
 
   setStrings(S: Strings): void {
@@ -105,6 +110,7 @@ export class TopBar {
     this.search.placeholder = S.search;
     this.search.setAttribute('aria-label', S.search);
     this.filterButton.textContent = S.filter;
+    this.report.textContent = S.openReport;
     this.popup.setStrings(S);
   }
 

@@ -5,7 +5,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {
-  ALL_STATUSES, Engine, EngineState, Filter, TreeNode, applyPreset, buildTree, countByStatus, findItem,
+  ALL_STATUSES, Engine, EngineState, Filter, TreeNode, UnverifiedMode, applyPreset, buildTree, countByStatus, findItem,
   gitVersion, matches,
 } from '@speclog/core';
 import {
@@ -57,11 +57,17 @@ export class SpeclogHost implements vscode.Disposable {
   private starting: Promise<void> | undefined;
   private gitErrorShown = false;
   private disposed = false;
+  /** Set once the engine published a state that is not busy (its first scan has finished). */
+  private settled = false;
+  private readonly stateEmitter = new vscode.EventEmitter<EngineState>();
+  /** Fires with each engine state once the first scan has finished. */
+  readonly onDidChangeState = this.stateEmitter.event;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.ui = readUi(context.workspaceState.get(UI_KEY));
     this.subscriptions.push(
       this.statusBar,
+      this.stateEmitter,
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration(SECTION)) this.reconfigure();
       }),
@@ -159,6 +165,22 @@ export class SpeclogHost implements vscode.Disposable {
     this.postState(false);
   }
 
+  /** The engine state; undefined until the first scan has finished (a partial first scan is not a state to report on). */
+  currentState(): EngineState | undefined {
+    return this.settled ? this.state : undefined;
+  }
+
+  /** How hand-written done is shown (the speclog.unverifiedDone setting), as the engine uses it. */
+  engineMode(): UnverifiedMode {
+    return readEngineConfig(this.trustCommits()).unverifiedMode;
+  }
+
+  /** Keys of the scanned repositories the board shows (hidden ones left out), sorted by name. */
+  visibleRepoKeys(): string[] {
+    const hidden = new Set(this.hiddenRepos());
+    return [...new Set(this.repoInfos().map((r) => r.key))].filter((k) => !hidden.has(k));
+  }
+
   /** The current scan result; undefined before the first one. */
   get workspace(): EngineState['workspace'] | undefined {
     return this.state?.workspace;
@@ -203,7 +225,9 @@ export class SpeclogHost implements vscode.Disposable {
   private onState(s: EngineState): void {
     if (this.disposed) return;
     this.state = s;
+    if (!s.busy) this.settled = true;
     this.statusBar.update(summarize(s));
+    if (this.settled) this.stateEmitter.fire(s);
     if (!this.pendingTimer) this.pendingTimer = setTimeout(() => this.flushState(), COALESCE_MS);
   }
 
@@ -439,6 +463,7 @@ export class SpeclogHost implements vscode.Disposable {
           const known = isStr(m.repoKey) && (this.state?.workspace.snapshots ?? []).some((x) => x.repo.key === m.repoKey);
           await vscode.commands.executeCommand('speclog.trustTaskFiles', known ? m.repoKey : undefined);
         } else if (m.id === 'installHook') await vscode.commands.executeCommand('speclog.installHook');
+        else if (m.id === 'openReport') await vscode.commands.executeCommand('speclog.openReport');
         break;
     }
   }
