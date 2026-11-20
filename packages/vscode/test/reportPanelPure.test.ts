@@ -93,9 +93,10 @@ describe('report panel helpers', () => {
 });
 
 describe('ReportGate', () => {
-  const w1 = { id: 1 }, w2 = { id: 2 };
+  const s1 = { n: 1 }, s2 = { n: 2 };
+  const w1 = { snapshots: [s1] }, w2 = { snapshots: [s2] };
   it('shows only the newest run and marks it stale after a newer workspace', () => {
-    const g = new ReportGate<object>();
+    const g = new ReportGate();
     const a = g.begin(w1);
     const b = g.begin(w1);
     expect(g.settle(a, { ok: true }, '')).toBe('ignore');
@@ -106,13 +107,13 @@ describe('ReportGate', () => {
     expect(g.isStale(w2)).toBe(true);
   });
   it('is silent for a cancelled run and reports other errors', () => {
-    const g = new ReportGate<object>();
+    const g = new ReportGate();
     expect(g.settle(g.begin(w1), null, 'cancelled')).toBe('ignore');
     expect(g.settle(g.begin(w1), null, 'boom')).toBe('error');
     expect(g.isStale(w2)).toBe(false);
   });
   it('a new run clears the stale flag until it shows', () => {
-    const g = new ReportGate<object>();
+    const g = new ReportGate();
     g.settle(g.begin(w1), { ok: true }, '');
     expect(g.isStale(w2)).toBe(true);
     const c = g.begin(w2);
@@ -120,6 +121,22 @@ describe('ReportGate', () => {
     g.cancel();
     expect(c.signal.aborted).toBe(true);
     expect(g.settle(c, { ok: true }, '')).toBe('ignore');
+  });
+});
+
+describe('ReportGate staleness', () => {
+  const s1 = { n: 1 }, s2 = { n: 2 };
+  it('a newer workspace with the same snapshot objects is not stale (a routine fetch)', () => {
+    const g = new ReportGate();
+    g.settle(g.begin({ snapshots: [s1, s2] }), { ok: true }, '');
+    expect(g.isStale({ snapshots: [s1, s2] })).toBe(false);
+  });
+  it('a replaced, added or removed snapshot is stale', () => {
+    const g = new ReportGate();
+    g.settle(g.begin({ snapshots: [s1, s2] }), { ok: true }, '');
+    expect(g.isStale({ snapshots: [s1, { n: 2 }] })).toBe(true);
+    expect(g.isStale({ snapshots: [s1, s2, { n: 3 }] })).toBe(true);
+    expect(g.isStale({ snapshots: [s1] })).toBe(true);
   });
 });
 
