@@ -3,7 +3,7 @@
 All notable changes to Speclog are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.3] - 2026-11-21 (pre-release)
 
 ### Added
 - Reports: **Speclog: Open Report** (and the board's Report button) shows what was done in a period
