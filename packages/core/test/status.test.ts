@@ -25,6 +25,7 @@ function repo(name: string, programs: Program[], owner = ''): RepoSnapshot {
   return {
     repo: { name, owner, path: `/r/${owner}/${name}`, origin: '', key: `/r/${owner}/${name}` },
     main: { name: 'main', tipRef: 'refs/heads/main', reachRefs: ['refs/heads/main'] },
+    tipHash: '',
     formats: [], hasTaskFiles: true, programs, issues: [], mainCommits: [], branches: [], evidence: [],
     sinceCommit: '', hasSinceFile: false, programsAtSince: [], commitsAfterSince: new Set(),
     trustCommit: '', programsAtTrust: [], uncommittedTaskChanges: false, changedFiles: new Map(), error: '',

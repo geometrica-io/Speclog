@@ -3,6 +3,15 @@
 All notable changes to Speclog are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Reports: **Speclog: Open Report** (and the board's Report button) shows what was done in a period
+  (This week, Last week, This month, Last month, Custom): per-repository and per-program progress at the
+  start and end, the change in points, a progress curve, and the Finished / In progress / Added /
+  Remaining / Reopened, dropped or removed lists. Numbers are replayed from git (main at the end of each
+  day). Export as HTML, Markdown, or Print / PDF… (opens in your browser).
+
 ## [0.1.2] - 2026-11-18 (pre-release)
 
 ### Added

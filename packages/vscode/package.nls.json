@@ -4,6 +4,7 @@
   "view.home.name": "Speclog",
   "view.home.welcome": "Tasks from the git repositories in this workspace.\n[Open Speclog](command:speclog.open)",
   "command.open": "Open",
+  "command.openReport": "Open Report",
   "command.refresh": "Refresh",
   "command.installHook": "Install commit-msg hook in this repository",
   "command.trustTaskFiles": "Trust current task files",

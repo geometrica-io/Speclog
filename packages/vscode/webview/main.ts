@@ -52,6 +52,7 @@ const topBar = new TopBar({
     sendLayout();
     renderTopBar();
   },
+  openReport: () => post({ type: 'command', id: 'openReport' }),
 });
 
 const treePane = h('div', { class: 'pane tree-pane' }, tree.element);

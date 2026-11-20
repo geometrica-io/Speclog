@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { cleanPromptFiles } from './agent';
 import { registerCommands } from './commands';
 import { SpeclogHost } from './host';
+import { ReportPanel } from './reportPanel';
 
 /** VS Code gives deactivate about 5 s; stop waiting for the engine before that. */
 const DEACTIVATE_WAIT_MS = 4000;
@@ -20,6 +21,10 @@ export interface SpeclogApi {
   lastDetails(): unknown;
   /** Handles a message as if the webview had sent it. */
   receive(m: unknown): Promise<void>;
+  /** Repositories in the report tab's newest computed model; -1 when none was computed yet. */
+  lastReportRepoCount(): number;
+  /** The report tab's webview script ran and sent "ready". */
+  reportWebviewReady(): boolean;
 }
 
 let host: SpeclogHost | undefined;
@@ -50,6 +55,8 @@ export function activate(context: vscode.ExtensionContext): SpeclogApi {
     trustCommits: () => h.trustCommits(),
     lastDetails: () => h.lastDetails,
     receive: (m) => h.receive(m),
+    lastReportRepoCount: () => ReportPanel.lastRepoCount(),
+    reportWebviewReady: () => ReportPanel.webviewReady(),
   };
 }
 

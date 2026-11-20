@@ -24,6 +24,7 @@ function repo(name = 'R', path = ''): RepoSnapshot {
   return {
     repo: { name, owner: '', path: p, origin: '', key: p },
     main: { name: 'main', tipRef: 'refs/heads/main', reachRefs: ['refs/heads/main'] },
+    tipHash: '',
     formats: ['docsTasks'], hasTaskFiles: true, programs: [], issues: [], mainCommits: [], branches: [], evidence: [],
     sinceCommit: '', hasSinceFile: false, programsAtSince: [], commitsAfterSince: new Set(),
     trustCommit: '', programsAtTrust: [], uncommittedTaskChanges: false, changedFiles: new Map(), error: '',

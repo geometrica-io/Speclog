@@ -110,6 +110,34 @@ activity**, oldest (↑) or newest (↓) first. Last activity is the newest of a
 `Last activity ↓` brings the day's work, including work on branches, to the top. In the Time view the
 day groups follow the chosen date.
 
+## Reports
+
+Run **Speclog: Open Report** or click **Report** on the board to see what was done in a period. Pick a
+period: **This week**, **Last week**, **This month**, **Last month** or **Custom** (two dates). Weeks start
+on Monday and the end of a period is clamped to today.
+
+A report shows, per repository and per program, the progress at the start and at the end of the period
+and the change in points, a progress curve, and the lists **Finished**, **In progress**, **Added**,
+**Remaining**, and **Reopened, dropped or removed**.
+
+The numbers are replayed from git: for every day, Speclog reads main as it was at the end of that day.
+A report follows the main branch Speclog reads (local main when it is ahead of origin, otherwise
+origin/main), so local work on a diverged main may differ from what the board shows. Counts cover main
+only; items that exist only on a branch are listed under **In progress**, and only when the period ends
+today. An Unverified item is not done, and Dropped items are outside the totals. The date shown for a
+**Finished** item is the date of its closing commit, so an item closed on a branch and merged during the
+period can show a date before the period starts. Added items show their created date, if any. When a
+repository's latest scan failed, the report uses the data Speclog still has and names the repository
+under **Data notes**.
+
+The repository selection starts as the repositories visible on the board; repositories found after the
+tab opened start unchecked. The board's other filters (status, size and search) do not apply to a report.
+When a newer scan changes the data under an open report, a **Data changed** banner with a **Refresh**
+button appears; click it to recompute.
+
+Export a report with **Export HTML** (a single HTML file) or **Export Markdown**, or use **Print / PDF…**,
+which opens the report in your browser so you can print it or save it as PDF there.
+
 ## Attention list
 
 The bottom panel lists what needs a look: stale branches with unmerged task work, commits that changed
@@ -200,6 +228,7 @@ Set `speclog.fetch.enabled` to `false` to turn background fetching off.
 
 - **Speclog: Open**
 - **Speclog: Refresh**
+- **Speclog: Open Report**
 - **Speclog: Install commit-msg hook in this repository**
 - **Speclog: Trust current task files** / **Speclog: Stop trusting task files**
 - **Speclog: Send selected item to agent** / **Speclog: Copy agent prompt**
@@ -222,7 +251,6 @@ unchanged.
 
 ## Roadmap
 
-- v1.x: reports (weekly / monthly / range; HTML, PDF, Markdown export).
 - v2: GitHub sign-in and lightweight clone of selected repositories.
 - v2: a `speclog` CLI and an MCP server for agents.
 - Later: open a commit in VS Code's git view from the property table (v1 copies its hash).
