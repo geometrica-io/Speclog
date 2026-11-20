@@ -121,16 +121,22 @@ and the change in points, a progress curve, and the lists **Finished**, **In pro
 **Remaining**, and **Reopened, dropped or removed**.
 
 The numbers are replayed from git: for every day, Speclog reads main as it was at the end of that day.
-Counts cover main only; items that exist only on a branch are listed under **In progress**. An
-Unverified item is not done, and Dropped items are outside the totals.
+A report follows the main branch Speclog reads (local main when it is ahead of origin, otherwise
+origin/main), so local work on a diverged main may differ from what the board shows. Counts cover main
+only; items that exist only on a branch are listed under **In progress**, and only when the period ends
+today. An Unverified item is not done, and Dropped items are outside the totals. The date shown for a
+**Finished** item is the date of its closing commit, so an item closed on a branch and merged during the
+period can show a date before the period starts. Added items show their created date, if any. When a
+repository's latest scan failed, the report uses the data Speclog still has and names the repository
+under **Data notes**.
 
 The repository selection starts as the repositories visible on the board; repositories found after the
-tab opened start unchecked. The board's other filters (search, status, view) do not apply to a report.
-When the repositories change under an open report, **Data changed — Refresh** appears; click it to
-recompute.
+tab opened start unchecked. The board's other filters (status, size and search) do not apply to a report.
+When a newer scan changes the data under an open report, a **Data changed** banner with a **Refresh**
+button appears; click it to recompute.
 
-Export a report as a single **HTML** file or as **Markdown**, or use **Print / PDF…**, which opens the
-report in your browser so you can print it or save it as PDF there.
+Export a report with **Export HTML** (a single HTML file) or **Export Markdown**, or use **Print / PDF…**,
+which opens the report in your browser so you can print it or save it as PDF there.
 
 ## Attention list
 
