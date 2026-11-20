@@ -30,18 +30,27 @@ export function localStamp(d: Date): string {
   return `${localDay(d)} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 }
 
+/** The workspace shape the gate reads: its snapshot list. */
+export interface GateWorkspace { readonly snapshots: readonly unknown[]; }
+
+/** Same snapshot objects in the same order (the engine keeps an unchanged repository's snapshot object). */
+export function sameSnapshots(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((s, i) => s === b[i]);
+}
+
 /**
  * Which report result the tab uses: only the newest run's, a cancelled run is silent, and a shown report is
- * stale once the engine has a newer workspace than the one it was computed from. W: the workspace type.
+ * stale once the engine's workspace holds other snapshots than the one it was computed from. A new workspace
+ * with the same snapshots (e.g. after a fetch that changed nothing) is not stale.
  */
-export class ReportGate<W> {
+export class ReportGate {
   private readonly runs = new LatestRun();
-  private from: W | undefined;
+  private from: readonly unknown[] | undefined;
   private shown = false;
 
   /** Starts a run on this workspace (undefined: waiting for the first scan); the previous run is aborted. */
-  begin(workspace: W | undefined): Run {
-    this.from = workspace;
+  begin(workspace: GateWorkspace | undefined): Run {
+    this.from = workspace ? [...workspace.snapshots] : undefined;
     this.shown = false;
     return this.runs.begin();
   }
@@ -56,9 +65,10 @@ export class ReportGate<W> {
     return error === 'cancelled' ? 'ignore' : 'error';
   }
 
-  /** A report is shown and the engine's current workspace is newer than the one it came from. */
-  isStale(current: W | undefined): boolean {
-    return this.shown && current !== undefined && current !== this.from;
+  /** A report is shown and the engine's current workspace holds other snapshots than the one it came from. */
+  isStale(current: GateWorkspace | undefined): boolean {
+    if (!this.shown || current === undefined) return false;
+    return this.from === undefined || !sameSnapshots(this.from, current.snapshots);
   }
 
   cancel(): void {

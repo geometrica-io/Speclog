@@ -5,7 +5,7 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { EngineState, PeriodPreset, ReportModel, computeReport, periodOf } from '@speclog/core';
+import { EngineState, PeriodPreset, ReplayCache, ReportModel, computeReport, periodOf } from '@speclog/core';
 import type { Period } from '@speclog/core';
 import type { SpeclogHost } from './host';
 import { defaultSaveDir, reportFileName } from './report/fileName';
@@ -26,7 +26,9 @@ export class ReportPanel implements vscode.Disposable {
   private static disposerRegistered = false;
 
   private readonly subscriptions: vscode.Disposable[] = [];
-  private readonly gate = new ReportGate<EngineState['workspace']>();
+  private readonly gate = new ReportGate();
+  /** The newest replay: a new repository selection on the same data and period only rebuilds the report. */
+  private readonly replays = new ReplayCache();
   private ready = false;
   private preset: PeriodPreset = 'thisWeek';
   private from = '';
@@ -56,7 +58,11 @@ export class ReportPanel implements vscode.Disposable {
     if (!ReportPanel.disposerRegistered) {
       ReportPanel.disposerRegistered = true;
       // Deactivation aborts a running computation of whichever panel is open.
-      context.subscriptions.push({ dispose: () => ReportPanel.current?.dispose() });
+      context.subscriptions.push({ dispose: () => {
+        // A later activation (same extension host) registers its own disposer again.
+        ReportPanel.disposerRegistered = false;
+        ReportPanel.current?.dispose();
+      } });
     }
   }
 
@@ -134,7 +140,7 @@ export class ReportPanel implements vscode.Disposable {
     this.postControls();
     void computeReport({
       snapshots: ws.snapshots, live: ws, today, period, mode: this.host.engineMode(),
-      selectedRepoPaths: repoPathsOf(ws.snapshots, this.selected), signal: run.signal,
+      selectedRepoPaths: repoPathsOf(ws.snapshots, this.selected), signal: run.signal, cache: this.replays,
       onProgress: (done, total) => { if (run.isCurrent()) this.postBusy(done, total); },
     }).then((r) => {
       if (this.disposed) return;
@@ -185,7 +191,8 @@ export class ReportPanel implements vscode.Disposable {
     const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
     const def = reportFileName(model.period, format);
     const target = await vscode.window.showSaveDialog({
-      defaultUri: vscode.Uri.file(path.join(defaultSaveDir(folder?.fsPath, os.homedir()), def)),
+      // joinPath keeps the folder's scheme (a remote or virtual workspace).
+      defaultUri: vscode.Uri.joinPath(defaultSaveDir(folder, vscode.Uri.file(os.homedir())), def),
       filters: format === 'html' ? { HTML: ['html'] } : { Markdown: ['md'] },
     });
     if (!target) return;

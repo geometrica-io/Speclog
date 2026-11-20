@@ -6,7 +6,7 @@ export function reportFileName(p: Period, ext: 'html' | 'md', suffix?: string): 
   return `speclog-report-${p.from}-${p.to}${suffix ? `-${suffix}` : ''}.${ext}`;
 }
 
-/** Where the save dialog starts: the first workspace folder, else the home folder. */
-export function defaultSaveDir(firstFolder: string | undefined, home: string): string {
+/** Where the save dialog starts: the first workspace folder, else the home folder (paths or URIs). */
+export function defaultSaveDir<T>(firstFolder: T | undefined, home: T): T {
   return firstFolder ?? home;
 }

@@ -35,8 +35,12 @@ const content = h('div', { class: 'content' });
 stale.hidden = true;
 error.hidden = true;
 progress.hidden = true;
+/** Exports act on the shown report: off while a new one is computed or failed, on with a report. */
+function setExports(on: boolean): void {
+  for (const b of [exportHtml, exportMd, exportPdf]) b.disabled = !on;
+}
 // Enabled by the first report: there is nothing to export before.
-for (const b of [exportHtml, exportMd, exportPdf]) b.disabled = true;
+setExports(false);
 
 const bar = h('div', { class: 'controls' },
   h('div', { class: 'group' }, periodLabel, period, fromLabel, from, toLabel, to,
@@ -154,6 +158,7 @@ window.addEventListener('message', (e: MessageEvent<ReportHostToWebview>) => {
       progress.textContent = m.total > 0 ? fmt(S.progress ?? '', m.done, m.total) : S.computing ?? '';
       content.classList.add('busy');
       error.hidden = true;
+      setExports(false);
       break;
     case 'report':
       progress.hidden = true;
@@ -162,13 +167,18 @@ window.addEventListener('message', (e: MessageEvent<ReportHostToWebview>) => {
       content.classList.remove('busy');
       // Built by the host's renderer: every model string in it is escaped; the CSP allows no inline script.
       content.innerHTML = m.html;
-      for (const b of [exportHtml, exportMd, exportPdf]) b.disabled = false;
+      content.hidden = false;
+      setExports(true);
       break;
     case 'error':
       progress.hidden = true;
       content.classList.remove('busy');
       error.hidden = false;
       error.textContent = m.text;
+      // The previous report is not the requested period's: hidden, not exported.
+      content.hidden = true;
+      stale.hidden = true;
+      setExports(false);
       break;
     case 'stale':
       stale.hidden = false;
