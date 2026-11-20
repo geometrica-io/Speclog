@@ -1,5 +1,5 @@
 {
-  "description": "Tasks from several git repositories, with their status verified from git.",
+  "description": "Tasks from several git repositories, with their status verified from git, and period reports.",
   "viewContainer.title": "Speclog",
   "view.home.name": "Speclog",
   "view.home.welcome": "Tasks from the git repositories in this workspace.\n[Open Speclog](command:speclog.open)",
