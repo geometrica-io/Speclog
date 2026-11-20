@@ -1,5 +1,5 @@
 // Bundles the extension (and, with --tests, the smoke test) into CommonJS for Node, and the webview
-// into an IIFE script + stylesheet for the panel. The core is bundled from its sources, so it need
+// and the report tab into IIFE scripts + stylesheets. The core is bundled from its sources, so it need
 // not be built first.
 import * as esbuild from 'esbuild';
 import * as path from 'path';
@@ -23,7 +23,7 @@ const common = {
 
 await esbuild.build({ ...common, entryPoints: [path.join(here, 'src', 'extension.ts')], outfile: path.join(here, 'dist', 'extension.js') });
 
-// Webview: browser IIFE; it imports only protocol.ts from src (no core, no vscode).
+// Webviews: browser IIFEs; they import only protocol.ts / reportProtocol.ts from src (no core, no vscode).
 await esbuild.build({
   bundle: true,
   platform: 'browser',
@@ -32,14 +32,14 @@ await esbuild.build({
   sourcemap: !production,
   minify: production,
   logLevel: 'warning',
-  entryPoints: { webview: path.join(here, 'webview', 'main.ts') },
+  entryPoints: { webview: path.join(here, 'webview', 'main.ts'), report: path.join(here, 'webview', 'report', 'main.ts') },
   outdir: path.join(here, 'dist'),
 });
 await esbuild.build({
   bundle: true,
   minify: production,
   logLevel: 'warning',
-  entryPoints: { webview: path.join(here, 'webview', 'styles.css') },
+  entryPoints: { webview: path.join(here, 'webview', 'styles.css'), report: path.join(here, 'webview', 'report', 'styles.css') },
   outdir: path.join(here, 'dist'),
 });
 
