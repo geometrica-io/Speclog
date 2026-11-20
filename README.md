@@ -7,9 +7,14 @@ verifies each task's status from git. A task is **Done** only when a commit on t
 (`Task: <id>` in the commit message). Work that sits on an unmerged branch shows as **On branch**. A
 "done" that someone or some agent wrote into a file, with no commit behind it, shows as **Unverified**.
 
-![The Speclog board grouped by repository and program: Backlog.md and docs/tasks items with Done, On branch, Unverified and Needs verification statuses, and the properties of a done item with its commit](docs/images/board-program.png)
+Reports show any period at a glance — what was finished, what is in progress and how far each repository
+came — and export as HTML, Markdown or PDF.
 
-![The same board grouped by time, showing every status from Not started to Needs decision](docs/images/board-time.png)
+![The Speclog board grouped by repository and program: a program's items with Done, On branch, Needs verification and Bug statuses, and the program's summary with its progress and statuses](docs/images/board-program.png)
+
+![The same board grouped by time: items by the month and day they were created, with every status from Not started to Needs decision](docs/images/board-time.png)
+
+![A Speclog report for last week: the item finished in the period with its closing commit, the item in progress with the reason, the remaining items with their status, and the repository selection of the report](docs/images/report-summary.png)
 
 *Screenshots use a generated demo workspace of fictional repositories (`node scripts/demo-workspace.mjs`).*
 

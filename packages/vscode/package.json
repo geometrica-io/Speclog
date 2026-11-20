@@ -27,7 +27,9 @@
     "spec kit",
     "task list",
     "multi-repo",
-    "ai agents"
+    "ai agents",
+    "reports",
+    "progress report"
   ],
   "engines": {
     "vscode": "^1.90.0"
