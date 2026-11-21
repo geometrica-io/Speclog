@@ -18,3 +18,8 @@ note: Today's branch work showed under the item's creation date in the Time view
 status: bug
 size: S
 note: "timed out waiting for the agent command to write arg.txt" failed once and passed on rerun (2026-11-18), under load.
+
+## FIX.4 Windows CI: the git dying test kills only the git launcher
+status: bug
+size: S
+note: On GitHub's Windows runner git is Git's cmd\git.exe launcher; the test killed only its pid, so the real git kept answering and no read failed (red since 2026-11-18).
