@@ -7,6 +7,7 @@ import type { RepoInfo } from '../src/model';
 import type { ParseCache } from '../src/adapters';
 import { BlobReader } from '../src/git/blobReader';
 import { readBlob } from '../src/git/repo';
+import { killTree } from '../src/git/runner';
 import { TestRepo, makeTempDir, removeTree } from './helpers/testRepo';
 
 const T = 120000;
@@ -180,7 +181,9 @@ describe('BlobReader', () => {
     await reader.read('refs/heads/main:big.md');
     const pid = reader.pid!;
     const pending = Array.from({ length: 20 }, () => reader.read('refs/heads/main:big.md'));
-    process.kill(pid, 'SIGKILL');
+    // The whole tree: on Windows the pid can be Git's cmd\git.exe launcher, whose child git serves
+    // the reads; killing only the launcher leaves git answering.
+    killTree(pid);
     const results = await Promise.all(pending);
     expect(results.some((y) => y.error !== '')).toBe(true);
     await reader.close();
